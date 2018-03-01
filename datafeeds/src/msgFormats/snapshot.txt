@@ -1,0 +1,6 @@
+{
+    "type": "snapshot",
+    "product_id": "BTC-EUR",
+    "bids": [["1", "2"]],
+    "asks": [["2", "3"]]
+}

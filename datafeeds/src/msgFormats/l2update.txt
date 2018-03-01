@@ -1,0 +1,1 @@
+[{"type":"l2update","product_id":"ETH-USD","time":"2018-02-26T20:01:46.768Z","changes":[["buy","861.24000000","29.83"]]}, {"type":"l2update","product_id":"ETH-USD","time":"2018-02-26T20:01:46.688Z","changes":[["sell","861.85000000","53.79615281"]]}]
