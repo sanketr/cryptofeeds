@@ -16,7 +16,7 @@ import Data.Aeson.Text as A (encodeToLazyText)
 import Data.Text.Lazy.Encoding as LT (encodeUtf8)
 import Data.Aeson as A (decode)
 import qualified Data.Binary.Get as B
-import qualified Data.Store as B (Store,encode)
+import qualified Data.Store as B (Store,encode) -- Fast binary serialization and deserialization
 import qualified Data.Text.Lazy as LT (Text)
 import Data.Maybe (maybe, fromJust)
 import qualified Data.Aeson.Types as A (FromJSON)
@@ -62,7 +62,7 @@ logDataToFile :: Connection -> Handle -> Handle -> IO()
 logDataToFile conn hlog hlogerr = do
                   -- msg is of type: Stream (Of (Either Text BS) m ().
                   -- Append to log if no error. Else log to logerr handle
-                  S.mapM_ (either (\x -> LBS.hPut hlogerr (LT.encodeUtf8 x)) (\x -> LBS.hPut hlog x)) $ S.take 10 (streamMsgsFromConn conn)
+                  S.mapM_ (either (\x -> LBS.hPut hlogerr (LT.encodeUtf8 x)) (\x -> LBS.hPut hlog x)) $ S.take 25 (streamMsgsFromConn conn)
 
 ws :: ClientApp ()
 ws connection = do
@@ -77,7 +77,7 @@ ws connection = do
     putMVar dieSignal "Done with processing first 10 messages - test mode"
 
   -- Let us build a JSON request for heartbeat to ETH-EUR instrument
-  let req1 = A.encodeToLazyText Request {_req_type = Subscribe, _req_channels = RequestMsg $ map (\(reqtyp,prdids) -> Channels {_channel_name = reqtyp, _channel_product_ids = prdids}) [(HeartbeatTyp,["ETH-EUR"]),(Level2Typ,["ETH-EUR"])]}
+  let req1 = A.encodeToLazyText Request {_req_type = Subscribe, _req_channels = RequestMsg $ map (\(reqtyp,prdids) -> Channels {_channel_name = reqtyp, _channel_product_ids = prdids}) [(HeartbeatTyp,["ETH-EUR"]),(Level2Typ,["ETH-EUR"]),(TickerTyp,["ETH-EUR"])]}
   -- Send heartbeat subscription message
   sendTextData connection req1
 

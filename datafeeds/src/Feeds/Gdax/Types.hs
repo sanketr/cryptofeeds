@@ -52,7 +52,7 @@ data Heartbeat = Heartbeat { _hb_type :: RspTyp, _hb_sequence:: Int64, _hb_last_
 deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 4,constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''Heartbeat 
 instance Store Heartbeat
 
-data Ticker = Ticker { _tick_type :: RspTyp, _tick_product_id :: T.Text, _tick_price :: T.Text, _tick_open_24h :: T.Text, _tick_volume_24h :: T.Text, _tick_low_24h :: T.Text, _tick_high_24h :: T.Text, _tick_volume_30d :: T.Text, _tick_best_bid :: T.Text, _tick_best_ask :: T.Text, _tick_side :: T.Text, _tick_time :: T.Text, _tick_trade_id :: Int64, _tick_last_size :: T.Text } deriving (Show, Generic,Typeable)
+data Ticker = Ticker { _tick_type :: RspTyp, _tick_product_id :: T.Text, _tick_price :: T.Text, _tick_open_24h :: T.Text, _tick_volume_24h :: T.Text, _tick_low_24h :: T.Text, _tick_high_24h :: T.Text, _tick_volume_30d :: T.Text, _tick_best_bid :: T.Text, _tick_best_ask :: T.Text, _tick_side :: Maybe T.Text, _tick_time :: Maybe T.Text, _tick_trade_id :: Maybe Int64, _tick_last_size :: Maybe T.Text } deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 6,constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''Ticker
 instance Store Ticker
 
