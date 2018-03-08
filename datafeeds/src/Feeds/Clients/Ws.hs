@@ -7,24 +7,22 @@ where
 
 import Wuss -- Websocket secure client - small wrapper around websockets library
 
-import Control.Concurrent (MVar,newEmptyMVar,readMVar,putMVar,forkIO,threadDelay)
-import Control.Monad (forever, unless, void)
-import Data.Text (Text, pack)
+import Control.Concurrent (MVar,newEmptyMVar,readMVar,putMVar,forkIO)
+import Control.Monad (forever)
+import Data.Text (pack)
 import Network.WebSockets (ClientApp, Connection, receiveData, sendClose, sendTextData)
-import Feeds.Gdax.Types (Heartbeat(..),GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..))
+import Feeds.Gdax.Types (GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..))
 import Data.Aeson.Text as A (encodeToLazyText)
 import Data.Text.Lazy.Encoding as LT (encodeUtf8)
 import Data.Aeson as A (decode)
-import qualified Data.Binary.Get as B
 import qualified Data.Store as B (Store,encode) -- Fast binary serialization and deserialization
 import qualified Data.Text.Lazy as LT (Text)
-import Data.Maybe (maybe, fromJust)
 import qualified Data.Aeson.Types as A (FromJSON)
 import qualified Data.ByteString.Lazy as LBS (ByteString,hPut,fromStrict)
 import qualified Streaming.Prelude as S (Of, Stream, yield, mapM_,take)
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import GHC.IO.Handle (Handle)
-import System.IO (openBinaryFile, IOMode(..), hFlush, hSetBuffering, BufferMode(..), hClose)
+import System.IO (openBinaryFile, IOMode(..),hSetBuffering, BufferMode(..), hClose)
 import System.Exit (exitSuccess)
 
 -- | Imports for deriving Generic and Typeable
@@ -39,7 +37,7 @@ client = runSecureClient "ws-feed.gdax.com" 443 "/" ws
 msgDecode :: (A.FromJSON a, B.Store a) => LT.Text -> Either LT.Text a
 msgDecode inp = case A.decode . LT.encodeUtf8 $ inp of
           Just val -> Right val
-          Nothing -> Left inp 
+          Nothing -> Left inp
 
 -- Given a web socket connection, turn it into message stream - we will connect it to other streams like file append stream etc. to save down the data
 streamMsgsFromConn :: forall m. (MonadIO m, Monad m) => Connection -> S.Stream (S.Of (Either LT.Text LBS.ByteString)) m ()
@@ -56,13 +54,10 @@ getFileHandle :: LogType -> IO Handle
 getFileHandle logtyp = case logtyp of
                 Normal -> openBinaryFile "normal.log" AppendMode
                 Error -> openBinaryFile "unknown.log" AppendMode
-                  
 
 logDataToFile :: Connection -> Handle -> Handle -> IO()
-logDataToFile conn hlog hlogerr = do
-                  -- msg is of type: Stream (Of (Either Text BS) m ().
-                  -- Append to log if no error. Else log to logerr handle
-                  S.mapM_ (either (\x -> LBS.hPut hlogerr (LT.encodeUtf8 x)) (\x -> LBS.hPut hlog x)) $ S.take 25 (streamMsgsFromConn conn)
+logDataToFile conn hlog hlogerr =
+                  S.mapM_ (either (LBS.hPut hlogerr . LT.encodeUtf8) (LBS.hPut hlog)) $ S.take 10 (streamMsgsFromConn conn)
 
 ws :: ClientApp ()
 ws connection = do

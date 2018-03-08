@@ -21,6 +21,8 @@ description:         Please see the README on Github at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
+- filepath
+- directory
 - aeson
 - websockets
 - vector
@@ -32,6 +34,7 @@ dependencies:
 - safe-exceptions
 - async
 - store
+- time
 
 library:
   source-dirs: src
