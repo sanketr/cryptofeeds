@@ -35,6 +35,7 @@ dependencies:
 - async
 - store
 - time
+- random
 
 library:
   source-dirs: src
