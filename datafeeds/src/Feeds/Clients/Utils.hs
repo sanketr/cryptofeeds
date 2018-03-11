@@ -1,13 +1,15 @@
 {-# LANGUAGE OverloadedStrings,ScopedTypeVariables #-}
 module Feeds.Clients.Utils
 (
- logSwitch
+ logWriters,
+ logWritersTest,
+ LogType(..)
 )
 where
 
 import Control.Concurrent (MVar,newMVar,putMVar,tryPutMVar,takeMVar,tryTakeMVar,threadDelay,forkFinally)
 import Control.Monad (unless)
-import Control.Exception.Safe (bracket,bracketOnError)
+import Control.Exception.Safe (bracketOnError)
 import System.Directory (createDirectoryIfMissing,doesFileExist)
 import System.FilePath (takeDirectory,(</>))
 import System.IO (openBinaryFile,IOMode(..),hSetBuffering, BufferMode(..),hClose)
@@ -16,19 +18,9 @@ import Data.Time (formatTime,defaultTimeLocale,toModifiedJulianDay,utctDay)
 import Data.Time.Clock.System (systemToUTCTime,getSystemTime)
 import Data.List (foldl')
 import Data.Char (toLower)
-
-{-- |
-Top level - retry on exception, log retry event with details on what happened:
-a) connection was dropped
-b) any of the log handles couldn't be used
-
-Connection ->
-
-acquire file handle1 with bracket - put in mvar
-acquire file handle2 with bracket - put in mvar 
-
-if any async exception, cancel the thread that uses those handles, throw exception
---}
+import qualified Data.ByteString.Lazy as LBS (ByteString,hPut)
+import Control.Exception(Exception,throw)
+--import Data.Time.Clock(addUTCTime,nominalDay) -- used for testing date rollover by faking date changes
 
 -- Simple utility to open a binary file - makes sure that parent directories are created if they don't exist
 openFile :: FilePath -> IOMode -> IO Handle
@@ -52,59 +44,99 @@ switchFiles ohdl mode ctr getPath = do
   -- creating a new log instead of accidentally overwriting an existing log
   let loop num = do
             exists <- doesFileExist $ getPath num
-            -- Warning - might overflow since there is no upper bound - partial function
+            -- Warning - might overflow since there is no upper bound on increment
             if exists then loop (num + 1) else openFile (getPath num) mode
   loop ctr -- return handle to new file
+{-# INLINABLE switchFiles #-}
 
 -- Get date as integer as well as string - we use string to create directories etc. and integer to keep track of date rollover
 getDate :: IO (Integer,String)
-getDate = do
+getDate  = do
   t <- systemToUTCTime <$> getSystemTime
+  --t <- addUTCTime (nominalDay*(fromIntegral (sim::Int))) <$> systemToUTCTime <$> getSystemTime
   let datestr = formatTime defaultTimeLocale "%Y.%m.%d" t
-      dayint = toModifiedJulianDay . utctDay $ t -- day today with day 1858-11-17 as 0.
+      dayint = toModifiedJulianDay . utctDay $ t -- day today with day of 1858-11-17 as 0.
   return (dayint,datestr)
 
--- TODO - keep state for file handles - should be filled before IO so it persists across exceptions  
--- State to keep - date, current file number 
+-- State to keep - date, current file number, flag to indicate initialization
 data LogState = LogState {logdt:: Integer, logctr:: Int, logstart :: Bool } deriving (Show)
 data LogType = Normal | Error deriving (Show)
 
+data NoLogFileException = NormalLogException String | ErrorLogException String
+
+instance Show NoLogFileException where
+  show (NormalLogException e) = "NormalLogException: There was an issue when accessing normal log file. " ++ e
+  show (ErrorLogException e) = "ErrorLogException: There was an issue when accessing normal log file. " ++ e
+
+instance Exception NoLogFileException
+
 -- We will execute this one in a separate thread and continously monitor for date change
--- Can throw exception while MVar is already blocked by takeMVar
-logSwitchH :: Int -> FilePath -> LogState -> MVar (Maybe Handle,Maybe Handle) -> IO ()
-logSwitchH interval logbasedir st mvar = do
+logSwitcher :: Int -> (FilePath,FilePath) -> LogState -> MVar (Maybe Handle,Maybe Handle) -> IO ()
+logSwitcher interval logbasedir st mvar = do
   let loop state = do
         unless (logstart state) $ threadDelay interval -- Dont delay first iteration
         (ndt,ndtstr) <- getDate
-        case (logdt state < ndt) || logstart state of
-          True -> do -- Either date rolled over to next day or first time
-                let newctr = if logdt state < ndt then 1 else 1 + logctr state -- In case of new date, start with 1
-                bracketOnError (takeMVar mvar) (tryPutMVar mvar) $ \(h1,h2) ->
-                  bracketOnError (switchFiles h1 WriteMode newctr (getLogPath Normal ndtstr)) hClose $ \hdl1 ->
-                    bracketOnError (switchFiles h2 WriteMode newctr (getLogPath Error ndtstr)) hClose $ \hdl2 ->
-                      putMVar mvar (Just hdl1,Just hdl2)
-                -- TODO - make sure numbering is correct
-                loop LogState { logdt = ndt, logctr = newctr, logstart = False }
-          False -> loop state
+        if (logdt state /= ndt) || logstart state then
+          do -- Either date rolled over to different day or first time
+        -- newctr is not of much use as switchFiles function does the heavy lifting of figuring right number,
+        -- but let us keep this for now - might need it in future
+            let newctr = if logdt state /= ndt then 1 else 1 + logctr state -- In case of new date, start with 1
+            bracketOnError (takeMVar mvar) (putMVar mvar) $ \(h1,h2) ->
+              bracketOnError (switchFiles h1 WriteMode newctr (getLogPath Normal ndtstr)) (\x -> putMVar mvar (Nothing,Nothing) >> hClose x) $ \hdl1 ->
+                bracketOnError (switchFiles h2 WriteMode newctr (getLogPath Error ndtstr)) (\x -> putMVar mvar (Nothing,Nothing) >> hClose x) $ \hdl2 ->
+                  putMVar mvar (Just hdl1,Just hdl2) 
+            loop LogState { logdt = ndt, logctr = newctr, logstart = False }
+        else loop state
         where
           getLogPath :: LogType -> String -> Int -> FilePath
-          getLogPath typ dt num = Data.List.foldl' (</>) "" [logbasedir,dt,map toLower (show typ) ++ show num ++ ".log"]
-  loop st -- loop forever until killed - make sure to do forkFinally for handle cleanup 
+          getLogPath typ dt num = Data.List.foldl' (</>) "" [fst logbasedir,dt,snd logbasedir,map toLower (show typ) ++ show num ++ ".log"]
+          {-# INLINABLE getLogPath #-}
+  loop st -- loop forever until killed 
 
--- This function takes care of creating log file handles, and closing them - async exceptions are handled
-logSwitch :: Int -> FilePath -> MVar String -> IO (MVar (Maybe Handle,Maybe Handle))
-logSwitch interval logbasedir dieSignal = do
-  (dt,dtstr) <- getDate
+
+-- This function creates log writers that do log file management including rotation - async exceptions are handled
+logWriters :: Int -> (FilePath,FilePath) -> MVar String -> IO (LogType ->  LBS.ByteString -> IO())
+logWriters interval logbasedir dieSignal = do
+  (dt,_) <- getDate
   mvar <- newMVar (Nothing,Nothing)
   let initst = LogState { logdt = dt, logctr = 0, logstart = True}
-      cleanUp = do
+      cleanUp msg = do
               hdls <- tryTakeMVar mvar -- mvar may not be filled in case of exception - so, don't block
               maybe (return ()) (\(h1,h2) -> mapM_ (maybe (return ()) hClose) [h1,h2]) hdls
-              print "Cleaning up"
-              tryPutMVar mvar (Nothing,Nothing) >> putMVar dieSignal "Exception during log switch logic" -- Make sure to put empty values in MVar
-  forkFinally (logSwitchH interval logbasedir initst mvar) (const cleanUp)
-  return mvar
+              tryPutMVar mvar (Nothing,Nothing) >> putMVar dieSignal msg -- Make sure to put empty values in MVar
+  _ <- forkFinally (logSwitcher interval logbasedir initst mvar) (either (cleanUp . show) (const . cleanUp $ "Done with processing messages - test mode")) -- must use forkFinally to send signal to parent thread via dieSignal mvar on exception - the parent thread can then terminate itself if need be
+  return $ logMsg mvar
+    where
+      -- We get current log handle for respective log, and write to it - if for any reasons, no log handle
+      -- is found, an exception is thrown which will kill the main thread. We can add logic to restart the
+      -- the whole data capture process
+      logMsg :: MVar (Maybe Handle,Maybe Handle) -> LogType ->  LBS.ByteString -> IO()
+      logMsg mvarHdls typ msg = do
+        -- must do takeMVar while the log is being written to avoid handle being closed (due to log switch to a new log while the current log is being written to - we make the log switcher wait until the log handles are not in use)
+        hlogs <- takeMVar mvarHdls
+        -- In case of exception, mvarHdls will stay empty which is ok since we are not in a good state any more
+        --, and hence, must kill this thread and restart the parent logger with new mvar
+        case typ of
+          Normal -> maybe (throw $ ErrorLogException "Normal log file couldnt be accessed for data save") (`LBS.hPut` msg) (fst hlogs)
+          Error -> maybe (throw $ ErrorLogException "Error log file couldnt be accessed for data save") (`LBS.hPut` msg) (snd hlogs)
+        putMVar mvarHdls hlogs
+      {-# INLINABLE logMsg #-}
 
+-- | Just a simple baseline logwriter function for performance debugging and comparison - not for production use!
+logWritersTest :: Int -> (FilePath,FilePath) -> MVar String -> IO (LogType ->  LBS.ByteString -> IO())
+logWritersTest interval logbasedir dieSignal = do
+  hdl1 <- openFile (getLogPath Normal "test" 1) WriteMode
+  hdl2 <- openFile (getLogPath Error "test" 1) WriteMode
+  let fn ltyp msg = do
+              case ltyp of 
+                Normal -> LBS.hPut hdl1 msg
+                Error -> LBS.hPut hdl2 msg
+  return fn
+  where
+          getLogPath :: LogType -> String -> Int -> FilePath
+          getLogPath typ dt num = Data.List.foldl' (</>) "" [fst logbasedir,dt,snd logbasedir,map toLower (show typ) ++ show num ++ ".log"]
+
+  
 {--
 main = do
   dieSignal <- newEmptyMVar

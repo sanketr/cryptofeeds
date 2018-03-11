@@ -36,6 +36,9 @@ dependencies:
 - store
 - time
 - random
+- mtl
+- streaming-bytestring
+- zstd
 
 library:
   source-dirs: src
@@ -55,7 +58,7 @@ executables:
 tests:
   datafeeds-test:
     main:                Spec.hs
-    source-dirs:         test
+    source-dirs:         tests
     ghc-options:
     - -threaded
     - -rtsopts
