@@ -18,7 +18,7 @@ import Data.Time (formatTime,defaultTimeLocale,toModifiedJulianDay,utctDay)
 import Data.Time.Clock.System (systemToUTCTime,getSystemTime)
 import Data.List (foldl')
 import Data.Char (toLower)
-import qualified Data.ByteString.Lazy as LBS (ByteString,hPut)
+import qualified Data.ByteString as BS (ByteString,hPut)
 import Control.Exception(Exception,throw)
 --import Data.Time.Clock(addUTCTime,nominalDay) -- used for testing date rollover by faking date changes
 
@@ -95,7 +95,7 @@ logSwitcher interval logbasedir st mvar = do
 
 
 -- This function creates log writers that do log file management including rotation - async exceptions are handled
-logWriters :: Int -> (FilePath,FilePath) -> MVar String -> IO (LogType ->  LBS.ByteString -> IO())
+logWriters :: Int -> (FilePath,FilePath) -> MVar String -> IO (LogType ->  BS.ByteString -> IO())
 logWriters interval logbasedir dieSignal = do
   (dt,_) <- getDate
   mvar <- newMVar (Nothing,Nothing)
@@ -110,27 +110,27 @@ logWriters interval logbasedir dieSignal = do
       -- We get current log handle for respective log, and write to it - if for any reasons, no log handle
       -- is found, an exception is thrown which will kill the main thread. We can add logic to restart the
       -- the whole data capture process
-      logMsg :: MVar (Maybe Handle,Maybe Handle) -> LogType ->  LBS.ByteString -> IO()
+      logMsg :: MVar (Maybe Handle,Maybe Handle) -> LogType ->  BS.ByteString -> IO()
       logMsg mvarHdls typ msg = do
         -- must do takeMVar while the log is being written to avoid handle being closed (due to log switch to a new log while the current log is being written to - we make the log switcher wait until the log handles are not in use)
         hlogs <- takeMVar mvarHdls
         -- In case of exception, mvarHdls will stay empty which is ok since we are not in a good state any more
         --, and hence, must kill this thread and restart the parent logger with new mvar
         case typ of
-          Normal -> maybe (throw $ ErrorLogException "Normal log file couldnt be accessed for data save") (`LBS.hPut` msg) (fst hlogs)
-          Error -> maybe (throw $ ErrorLogException "Error log file couldnt be accessed for data save") (`LBS.hPut` msg) (snd hlogs)
+          Normal -> maybe (throw $ ErrorLogException "Normal log file couldnt be accessed for data save") (`BS.hPut` msg) (fst hlogs)
+          Error -> maybe (throw $ ErrorLogException "Error log file couldnt be accessed for data save") (`BS.hPut` msg) (snd hlogs)
         putMVar mvarHdls hlogs
       {-# INLINABLE logMsg #-}
 
 -- | Just a simple baseline logwriter function for performance debugging and comparison - not for production use!
-logWritersTest :: Int -> (FilePath,FilePath) -> MVar String -> IO (LogType ->  LBS.ByteString -> IO())
+logWritersTest :: Int -> (FilePath,FilePath) -> MVar String -> IO (LogType ->  BS.ByteString -> IO())
 logWritersTest interval logbasedir dieSignal = do
   hdl1 <- openFile (getLogPath Normal "test" 1) WriteMode
   hdl2 <- openFile (getLogPath Error "test" 1) WriteMode
   let fn ltyp msg = do
               case ltyp of 
-                Normal -> LBS.hPut hdl1 msg
-                Error -> LBS.hPut hdl2 msg
+                Normal -> BS.hPut hdl1 msg
+                Error -> BS.hPut hdl2 msg
   return fn
   where
           getLogPath :: LogType -> String -> Int -> FilePath

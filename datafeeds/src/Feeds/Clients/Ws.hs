@@ -11,16 +11,18 @@ import Control.Concurrent (MVar,newEmptyMVar,takeMVar,putMVar,forkFinally,thread
 import Data.Text (pack)
 import Network.WebSockets (ClientApp, Connection, receiveData, sendClose, sendTextData)
 import Data.Aeson.Text as A (encodeToLazyText)
-import Data.Aeson as A (decode)
+import Data.Aeson as A (decode,encode)
 import qualified Data.Store as B (Store,encode) -- Fast binary serialization and deserialization
 import qualified Data.Aeson.Types as A (FromJSON)
-import qualified Data.ByteString.Lazy as LBS (ByteString,fromStrict)
-import qualified Streaming.Prelude as S (Of, Stream, yield, mapM_)
+import qualified Data.ByteString as BS (ByteString)
+import qualified Data.ByteString.Lazy as LBS (ByteString,toStrict)
+import qualified Streaming.Prelude as S (Of, Stream, yield, mapM_,take)
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import System.Exit (exitSuccess)
 
 import Feeds.Gdax.Types (GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..))
 import Feeds.Clients.Utils (logWriters,LogType(..))
+import Feeds.Clients.Data (eitherCompress)
 
 -- This is a websocket client to connect to GDAX websocket feed
 client :: IO ()
@@ -33,17 +35,17 @@ msgDecode inp = case A.decode inp of
           Nothing -> Left inp
 
 -- Given a web socket connection, turn it into message stream - we will connect it to other streams like file append stream etc. to save down the data
-streamMsgsFromConn :: forall m. (MonadIO m, Monad m) => Connection -> S.Stream (S.Of (Either LBS.ByteString LBS.ByteString)) m ()
+streamMsgsFromConn :: forall m. (MonadIO m, Monad m) => Connection -> S.Stream (S.Of (Either BS.ByteString BS.ByteString)) m ()
 streamMsgsFromConn conn = loop where
               loop = do
                 -- Block waiting for the message
                 msg <- liftIO $ receiveData conn
                 case (msgDecode msg :: Either LBS.ByteString GdaxRsp) of
-                  Left blob -> (S.yield :: a -> S.Stream (S.Of a) m () ) . Left $ blob
-                  Right res -> (S.yield :: a -> S.Stream (S.Of a) m () ) . Right . LBS.fromStrict . B.encode $ res  -- explicit type signature for S.yield because the compiler can't deduce it is the same monad m from type signature - use forall to enforce scoped types
+                  Left blob -> (S.yield :: a -> S.Stream (S.Of a) m () ) . Left . LBS.toStrict $ blob
+                  Right res -> (S.yield :: a -> S.Stream (S.Of a) m () ) . Right . B.encode $ res  -- explicit type signature for S.yield because the compiler can't deduce it is the same monad m from type signature - use forall to enforce scoped types
                 loop
 
-logDataToFile :: Connection -> (LogType ->  LBS.ByteString -> IO()) -> IO()
+logDataToFile :: Connection -> (LogType ->  BS.ByteString -> IO()) -> IO()
 logDataToFile conn logMsg = S.mapM_ (either (logMsg Error) (logMsg Normal)) $ (streamMsgsFromConn conn)
               
 ws :: ClientApp ()
