@@ -16,13 +16,13 @@ import qualified Data.Store as B (Store,encode) -- Fast binary serialization and
 import qualified Data.Aeson.Types as A (FromJSON)
 import qualified Data.ByteString as BS (ByteString)
 import qualified Data.ByteString.Lazy as LBS (ByteString,toStrict)
-import qualified Streaming.Prelude as S (Of, Stream, yield, mapM_,take)
+import qualified Streaming.Prelude as S (Of, Stream, yield, mapM_,take,separate)
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import System.Exit (exitSuccess)
 
 import Feeds.Gdax.Types (GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..))
 import Feeds.Clients.Utils (logWriters,LogType(..))
-import Feeds.Clients.Data (eitherCompress)
+import Feeds.Clients.Data (eitherCompress,compress,toSum)
 
 -- This is a websocket client to connect to GDAX websocket feed
 client :: IO ()
@@ -46,7 +46,8 @@ streamMsgsFromConn conn = loop where
                 loop
 
 logDataToFile :: Connection -> (LogType ->  BS.ByteString -> IO()) -> IO()
-logDataToFile conn logMsg = S.mapM_ (either (logMsg Error) (logMsg Normal)) $ (streamMsgsFromConn conn)
+--logDataToFile conn logMsg = S.mapM_ (either (logMsg Error) (logMsg Normal)) $ S.take 100 $ (streamMsgsFromConn conn)
+logDataToFile conn logMsg = (S.mapM_ (logMsg Normal)) . (S.mapM_ (liftIO . logMsg Error)) . S.separate . toSum . S.take 100 . streamMsgsFromConn $ conn
               
 ws :: ClientApp ()
 ws connection = do

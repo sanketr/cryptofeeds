@@ -44,6 +44,17 @@ library:
   source-dirs: src
 
 executables:
+  proclog :
+    main:                Main.hs
+    source-dirs:         app/logger
+    ghc-options:
+    - -threaded
+    - -O2
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - datafeeds
+
   datafeeds-exe:
     main:                Main.hs
     source-dirs:         app

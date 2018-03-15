@@ -1,22 +1,25 @@
-{-# LANGUAGE OverloadedStrings,ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings,ScopedTypeVariables,BangPatterns #-}
 module Feeds.Clients.Data
 (
 compress,
 decompress,
-eitherCompress
+eitherCompress,
+toSum,
+streamDecode
 )
 where
 
-import qualified Data.ByteString as BS (ByteString,empty)
+import qualified Data.ByteString as BS (ByteString,empty,length)
 import System.IO.ByteBuffer (ByteBuffer)
 import qualified System.IO.ByteBuffer as BB
 import Data.Store.Streaming
 import Data.Store (Store)
-import Streaming.Prelude as S
+import Streaming.Prelude as S hiding (print,show)
 import Data.IORef
 import Streaming as S
 import qualified Codec.Compression.Zstd.Streaming as Z
 import Control.Exception (bracket)
+import qualified Data.Aeson as A (ToJSON,encode)
 
 -- Compression streamer - uses Zstd compression
 streamZstd :: (MonadIO m,Monad m) => IO Z.Result -> Stream (Of BS.ByteString) m () -> Stream (Of BS.ByteString) m ()
@@ -58,7 +61,7 @@ fromSum = maps $ \eitherBytes ->
 transLift :: (Monad m, Monad (t m), MonadTrans t) => (m a -> m b) -> t m a -> t m b
 transLift f tma = tma >>= lift . f . return
 
--- Function to compress both Either byte streams
+-- Function to compress both Either byte streams - doesn't work on inner stream yet - TODO: Fix
 eitherCompress :: (MonadIO m,Monad m)
                => Int 
                -> Stream (Of (Either BS.ByteString BS.ByteString)) m () 
@@ -67,20 +70,18 @@ eitherCompress level =
      fromSum . unseparate . transLift (compress level) . compress level . separate . toSum
 
 
-streamDecode :: forall a. (Store a) => ByteBuffer -> Stream (Of BS.ByteString) IO () -> Stream (Of (Message a)) IO ()
+streamDecode :: forall a. (Store a) => ByteBuffer -> Stream (Of BS.ByteString) IO () -> Stream (Of a) IO ()
 streamDecode bb inp = do
     ref <- lift $ newIORef inp 
-    go (popper ref)
-  where
-    go src = do
-      r <- lift $ decodeMessageBS bb src
-      case r of 
-        Nothing -> return ()
-        Just msg -> S.yield msg >> go src
-
-    popper ref = do
-      chunks <- readIORef ref
-      r <- S.uncons chunks
-      case r of
-        Nothing -> return Nothing
-        Just (a,rest) -> writeIORef ref rest >> return (Just a)
+    let popper = do
+        r <- S.uncons =<< readIORef ref
+        case r of
+          Nothing -> return Nothing 
+          Just (a,rest) -> writeIORef ref rest >> return (Just a)
+    let go = do
+          r <- lift $ decodeMessageBS bb $ popper
+          lift $ print "Decoding"
+          case r of 
+            Nothing -> return ()
+            Just msg -> (lift $ print "Message found") >> (S.yield . fromMessage $ msg) >> go
+    go 
