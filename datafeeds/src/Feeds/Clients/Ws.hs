@@ -12,7 +12,8 @@ import Data.Text (pack)
 import Network.WebSockets (ClientApp, Connection, receiveData, sendClose, sendTextData)
 import Data.Aeson.Text as A (encodeToLazyText)
 import Data.Aeson as A (decode,encode)
-import qualified Data.Store as B (Store,encode) -- Fast binary serialization and deserialization
+import qualified Data.Store as B (Store) -- Fast binary serialization and deserialization
+import qualified Data.Store.Streaming as B (Message(..),encodeMessage)
 import qualified Data.Aeson.Types as A (FromJSON)
 import qualified Data.ByteString as BS (ByteString)
 import qualified Data.ByteString.Lazy as LBS (ByteString,toStrict)
@@ -42,7 +43,7 @@ streamMsgsFromConn conn = loop where
                 msg <- liftIO $ receiveData conn
                 case (msgDecode msg :: Either LBS.ByteString GdaxRsp) of
                   Left blob -> (S.yield :: a -> S.Stream (S.Of a) m () ) . Left . LBS.toStrict $ blob
-                  Right res -> (S.yield :: a -> S.Stream (S.Of a) m () ) . Right . B.encode $ res  -- explicit type signature for S.yield because the compiler can't deduce it is the same monad m from type signature - use forall to enforce scoped types
+                  Right res -> (S.yield :: a -> S.Stream (S.Of a) m () ) . Right . B.encodeMessage . B.Message $ res  -- explicit type signature for S.yield because the compiler can't deduce it is the same monad m from type signature - use forall to enforce scoped types
                 loop
 
 logDataToFile :: Connection -> (LogType ->  BS.ByteString -> IO()) -> IO()

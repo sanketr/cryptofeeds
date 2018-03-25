@@ -20,6 +20,7 @@ import Streaming as S
 import qualified Codec.Compression.Zstd.Streaming as Z
 import Control.Exception (bracket)
 import qualified Data.Aeson as A (ToJSON,encode)
+import Control.Monad.Trans.Resource (MonadResource)
 
 -- Compression streamer - uses Zstd compression
 streamZstd :: (MonadIO m,Monad m) => IO Z.Result -> Stream (Of BS.ByteString) m () -> Stream (Of BS.ByteString) m ()
@@ -70,14 +71,14 @@ eitherCompress level =
      fromSum . unseparate . transLift (compress level) . compress level . separate . toSum
 
 
-streamDecode :: forall a. (Store a) => ByteBuffer -> Stream (Of BS.ByteString) IO () -> Stream (Of a) IO ()
+streamDecode :: Store a => ByteBuffer -> Stream (Of BS.ByteString) IO () -> Stream (Of a) IO ()
 streamDecode bb inp = do
     ref <- lift $ newIORef inp 
     let popper = do
-        r <- S.uncons =<< readIORef ref
-        case r of
-          Nothing -> return Nothing 
-          Just (a,rest) -> writeIORef ref rest >> return (Just a)
+          r <- S.uncons =<< readIORef ref
+          case r of
+            Nothing -> return Nothing 
+            Just (a,rest) -> writeIORef ref rest >> return (Just a)
     let go = do
           r <- lift $ decodeMessageBS bb $ popper
           lift $ print "Decoding"
@@ -85,3 +86,6 @@ streamDecode bb inp = do
             Nothing -> return ()
             Just msg -> (lift $ print "Message found") >> (S.yield . fromMessage $ msg) >> go
     go 
+
+-- bracket acquisition of hdl and bb
+-- S.mapM_ Prelude.print . Streaming.Prelude.take 3 . Streaming.Prelude.drop 5 . (streamDecode bb :: Stream (Of BS.ByteString) IO () -> Stream (Of GdaxRsp) IO ()) . SBS.toChunks . SBS.fromHandle $ hdl
