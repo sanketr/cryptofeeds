@@ -16,8 +16,23 @@ import System.IO (stdin,stdout)
 import qualified Data.Aeson as A (encode)
 
 import Data.Store.Streaming as B
---import Codec.Compression.Zstd as Z
 import Codec.Compression.Zlib as Z (decompress)
+
+toSum :: Monad m 
+      => Stream (Of (Either BS.ByteString BS.ByteString)) m r 
+      -> Stream (Sum (Of BS.ByteString) (Of BS.ByteString)) m r
+toSum = maps $ \(eitherBytes :> x) -> 
+    case eitherBytes of
+        Left bytes -> InL (bytes :> x)
+        Right bytes -> InR (bytes :> x)
+
+fromSum :: Monad m 
+        => Stream (Sum (Of BS.ByteString) (Of BS.ByteString)) m r 
+        -> Stream (Of (Either BS.ByteString BS.ByteString)) m r
+fromSum = maps $ \eitherBytes ->
+    case eitherBytes of
+        InL (bytes :> x) -> Left bytes :> x
+        InR (bytes :> x) -> Right bytes :> x
 
 streamDecode :: Store a => ByteBuffer -> Stream (Of BS.ByteString) IO () -> Stream (Of a) IO ()
 streamDecode bb inp = do

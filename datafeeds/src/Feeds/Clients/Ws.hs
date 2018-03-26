@@ -11,19 +11,19 @@ import Control.Concurrent (MVar,newEmptyMVar,takeMVar,putMVar,forkFinally,thread
 import Data.Text (pack)
 import Network.WebSockets (ClientApp, Connection, receiveData, sendClose, sendTextData)
 import Data.Aeson.Text as A (encodeToLazyText)
-import Data.Aeson as A (decode,encode)
+import Data.Aeson as A (decode)
 import qualified Data.Store as B (Store) -- Fast binary serialization and deserialization
 import qualified Data.Store.Streaming as B (Message(..),encodeMessage)
 import qualified Data.Aeson.Types as A (FromJSON)
 import qualified Data.ByteString as BS (ByteString)
 import qualified Data.ByteString.Lazy as LBS (ByteString,toStrict,fromStrict)
-import qualified Streaming.Prelude as S (Of, Stream, yield, mapM_,take,separate)
+import qualified Streaming.Prelude as S (Of(..), Stream, yield, mapM_,take,separate)
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import System.Exit (exitSuccess)
 
 import Feeds.Gdax.Types (GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..),CompressedBlob(..))
 import Feeds.Clients.Utils (logWriters,LogType(..))
-import Feeds.Clients.Data (eitherCompress,compress,toSum)
+import Feeds.Clients.Internal (toSum)
 
 --import qualified Codec.Compression.Zstd as Z (compress) -- Dont use it as some kind of bug with C wrapper which causes OOM
 import qualified Codec.Compression.Zlib as Z (compress)
