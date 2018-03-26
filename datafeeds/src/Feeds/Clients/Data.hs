@@ -4,8 +4,7 @@ module Feeds.Clients.Data
 compress,
 decompress,
 eitherCompress,
-toSum,
-streamDecode
+toSum
 )
 where
 
@@ -70,22 +69,3 @@ eitherCompress :: (MonadIO m,Monad m)
 eitherCompress level =
      fromSum . unseparate . transLift (compress level) . compress level . separate . toSum
 
-
-streamDecode :: Store a => ByteBuffer -> Stream (Of BS.ByteString) IO () -> Stream (Of a) IO ()
-streamDecode bb inp = do
-    ref <- lift $ newIORef inp 
-    let popper = do
-          r <- S.uncons =<< readIORef ref
-          case r of
-            Nothing -> return Nothing 
-            Just (a,rest) -> writeIORef ref rest >> return (Just a)
-    let go = do
-          r <- lift $ decodeMessageBS bb $ popper
-          lift $ print "Decoding"
-          case r of 
-            Nothing -> return ()
-            Just msg -> (lift $ print "Message found") >> (S.yield . fromMessage $ msg) >> go
-    go 
-
--- bracket acquisition of hdl and bb
--- S.mapM_ Prelude.print . Streaming.Prelude.take 3 . Streaming.Prelude.drop 5 . (streamDecode bb :: Stream (Of BS.ByteString) IO () -> Stream (Of GdaxRsp) IO ()) . SBS.toChunks . SBS.fromHandle $ hdl

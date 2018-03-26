@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings,ScopedTypeVariables,DeriveGeneric,TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings,ScopedTypeVariables,DeriveGeneric,TemplateHaskell,BangPatterns #-}
 
 module Feeds.Gdax.Types
 (
@@ -11,7 +11,8 @@ module Feeds.Gdax.Types
  Ticker(..),
  Snapshot(..),
  L2Update(..),
- GdaxRsp(..)
+ GdaxRsp(..),
+ CompressedBlob(..)
 )
 
 where
@@ -20,12 +21,10 @@ import Data.Aeson.TH
 import Data.Store
 import GHC.Generics
 import Data.Typeable
-import Data.Text as T (Text,unpack)
+import Data.Text as T (Text)
 import Data.Char (toLower)
 import Data.Int (Int64)
-import Data.Vector as V (Vector)
-import Data.ByteString.Lazy as LBS (ByteString)
-import Control.Exception (Exception)
+import Data.ByteString as BS (ByteString)
 
 data ReqTyp = Subscribe | Unsubscribe deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''ReqTyp
@@ -67,3 +66,9 @@ instance Store L2Update
 data GdaxRsp = GdRHb Heartbeat | GdRTick Ticker | GdRSnap Snapshot | GdRL2Up L2Update deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{omitNothingFields = True, sumEncoding  = UntaggedValue} ''GdaxRsp
 instance Store GdaxRsp
+
+-- We use the data structure below to compress data, and use Store library to implement streaming
+-- decompression - that way, we are not at the mercy of compression algorithm for solid streaming
+-- implementation 
+data CompressedBlob = Compressed !BS.ByteString deriving (Show,Generic,Typeable)
+instance Store CompressedBlob

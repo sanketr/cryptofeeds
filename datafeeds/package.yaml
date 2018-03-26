@@ -39,6 +39,7 @@ dependencies:
 - mtl
 - streaming-bytestring
 - zstd
+- zlib
 - resourcet
 
 library:

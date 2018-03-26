@@ -16,14 +16,17 @@ import qualified Data.Store as B (Store) -- Fast binary serialization and deseri
 import qualified Data.Store.Streaming as B (Message(..),encodeMessage)
 import qualified Data.Aeson.Types as A (FromJSON)
 import qualified Data.ByteString as BS (ByteString)
-import qualified Data.ByteString.Lazy as LBS (ByteString,toStrict)
+import qualified Data.ByteString.Lazy as LBS (ByteString,toStrict,fromStrict)
 import qualified Streaming.Prelude as S (Of, Stream, yield, mapM_,take,separate)
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import System.Exit (exitSuccess)
 
-import Feeds.Gdax.Types (GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..))
+import Feeds.Gdax.Types (GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..),CompressedBlob(..))
 import Feeds.Clients.Utils (logWriters,LogType(..))
 import Feeds.Clients.Data (eitherCompress,compress,toSum)
+
+--import qualified Codec.Compression.Zstd as Z (compress) -- Dont use it as some kind of bug with C wrapper which causes OOM
+import qualified Codec.Compression.Zlib as Z (compress)
 
 -- This is a websocket client to connect to GDAX websocket feed
 client :: IO ()
@@ -43,12 +46,12 @@ streamMsgsFromConn conn = loop where
                 msg <- liftIO $ receiveData conn
                 case (msgDecode msg :: Either LBS.ByteString GdaxRsp) of
                   Left blob -> (S.yield :: a -> S.Stream (S.Of a) m () ) . Left . LBS.toStrict $ blob
-                  Right res -> (S.yield :: a -> S.Stream (S.Of a) m () ) . Right . B.encodeMessage . B.Message $ res  -- explicit type signature for S.yield because the compiler can't deduce it is the same monad m from type signature - use forall to enforce scoped types
+                  Right res -> (S.yield :: a -> S.Stream (S.Of a) m () ) . Right . B.encodeMessage . B.Message . Compressed . LBS.toStrict . Z.compress . LBS.fromStrict . B.encodeMessage . B.Message $ res  -- explicit type signature for S.yield because the compiler can't deduce it is the same monad m from type signature - use forall to enforce scoped types
                 loop
 
 logDataToFile :: Connection -> (LogType ->  BS.ByteString -> IO()) -> IO()
 --logDataToFile conn logMsg = S.mapM_ (either (logMsg Error) (logMsg Normal)) $ S.take 100 $ (streamMsgsFromConn conn)
-logDataToFile conn logMsg = (S.mapM_ (logMsg Normal)) . (S.mapM_ (liftIO . logMsg Error)) . S.separate . toSum . S.take 100 . streamMsgsFromConn $ conn
+logDataToFile conn logMsg = S.mapM_ (logMsg Normal) . S.mapM_ (liftIO . logMsg Error) . S.separate . toSum . S.take 100 . streamMsgsFromConn $ conn
               
 ws :: ClientApp ()
 ws connection = do
