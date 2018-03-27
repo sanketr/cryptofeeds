@@ -48,7 +48,7 @@ streamMsgsFromConn conn = loop where
 
 logDataToFile :: Connection -> (LogType ->  BS.ByteString -> IO()) -> IO()
 --logDataToFile conn logMsg = S.mapM_ (either (logMsg Error) (logMsg Normal)) $ S.take 100 $ (streamMsgsFromConn conn)
-logDataToFile conn logMsg = S.mapM_ (logMsg Normal) . S.mapM_ (liftIO . logMsg Error) . S.separate . toSum . S.take 100 . streamMsgsFromConn $ conn
+logDataToFile conn logMsg = S.mapM_ (logMsg Normal) . S.mapM_ (liftIO . logMsg Error) . S.separate . toSum . streamMsgsFromConn $ conn
               
 ws :: ClientApp ()
 ws connection = do
