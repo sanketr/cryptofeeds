@@ -57,7 +57,7 @@ executables:
     dependencies:
     - datafeeds
 
-  datafeeds-exe:
+  feedlogger:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
