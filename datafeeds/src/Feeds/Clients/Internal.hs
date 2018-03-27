@@ -16,7 +16,7 @@ import System.IO (stdin,stdout)
 import qualified Data.Aeson as A (encode)
 
 import Data.Store.Streaming as B
-import Codec.Compression.Zlib as Z (decompress)
+import Codec.Compression.Zlib as Z (compress,decompress)
 
 toSum :: Monad m 
       => Stream (Of (Either BS.ByteString BS.ByteString)) m r 
@@ -54,6 +54,9 @@ streamDecode bb inp = do
 decompressMessage :: CompressedBlob -> BS.ByteString
 decompressMessage (Compressed inp) = LBS.toStrict . Z.decompress . LBS.fromStrict $ inp
 
+compressMessage :: BS.ByteString -> CompressedBlob
+compressMessage  = Compressed . LBS.toStrict . Z.compress . LBS.fromStrict
+
 -- Two-step decoding - first unwrap compressed blob, decompress, and then unwrap Gdax messages from the resulting bytes
 -- Can't use yet with zstd compression because of some kind of bug in FFI which causes out-of-memory error. Will use with
 -- zlib for now
@@ -70,6 +73,10 @@ decodeGdaxLog = bracket
                   BB.free
                   -- Convert to JSON format, and redirect output to stdout
                   (SBS.toHandle stdout . SBS.fromChunks  . S.map (LBS.toStrict . A.encode) . decodeGdaxLogH)
+
+-- | https://ro-che.info/articles/2014-07-30-bracket
+-- | Ok to use bracket pattern here because bytebuffer is internal resource. Memory will be cleaned up on main
+-- | exit when bracket release won't run - see above link for note about when bracket may not clean up resources
 
 decodeGdaxCompressedLog :: IO ()
 decodeGdaxCompressedLog = bracket
