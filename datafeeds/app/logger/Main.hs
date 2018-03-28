@@ -1,4 +1,4 @@
-module Main where
+module Main
 
 import Feeds.Clients.Internal as C (decodeGdaxLog,decodeGdaxCompressedLog)
 

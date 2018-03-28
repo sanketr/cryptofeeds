@@ -17,7 +17,7 @@ import qualified Data.Store.Streaming as B (Message(..),encodeMessage)
 import qualified Data.Aeson.Types as A (FromJSON)
 import qualified Data.ByteString as BS (ByteString)
 import qualified Data.ByteString.Lazy as LBS (ByteString,toStrict)
-import qualified Streaming.Prelude as S (Of(..), Stream, yield, mapM_,take,separate)
+import qualified Streaming.Prelude as S (Of(..), Stream, yield, mapM_,separate)
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import System.Exit (exitSuccess)
 

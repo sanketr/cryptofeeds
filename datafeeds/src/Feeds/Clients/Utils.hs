@@ -124,7 +124,7 @@ logWriters interval logbasedir dieSignal = do
 
 -- | Just a simple baseline logwriter function for performance debugging and comparison - not for production use!
 logWritersTest :: Int -> (FilePath,FilePath) -> MVar String -> IO (LogType ->  BS.ByteString -> IO())
-logWritersTest interval logbasedir dieSignal = do
+logWritersTest _ logbasedir _ = do
   hdl1 <- openFile (getLogPath Normal "test" 1) WriteMode
   hdl2 <- openFile (getLogPath Error "test" 1) WriteMode
   let fn ltyp msg = do

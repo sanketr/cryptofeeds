@@ -25,11 +25,9 @@ dependencies:
 - directory
 - aeson
 - websockets
-- vector
 - bytestring
 - text
 - wuss >= 1.1 
-- binary
 - streaming
 - safe-exceptions
 - async
@@ -38,9 +36,7 @@ dependencies:
 - random
 - mtl
 - streaming-bytestring
-- zstd
 - zlib
-- resourcet
 
 library:
   source-dirs: src
@@ -69,7 +65,7 @@ executables:
     - datafeeds
 
 tests:
-  datafeeds-test:
+  unittests-feedlogger:
     main:                Spec.hs
     source-dirs:         tests
     ghc-options:
