@@ -37,6 +37,7 @@ dependencies:
 - mtl
 - streaming-bytestring
 - zlib
+- zstd
 
 library:
   source-dirs: src

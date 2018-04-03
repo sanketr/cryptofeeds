@@ -4,6 +4,7 @@ where
 
 import qualified Data.ByteString.Streaming as SBS (fromHandle,toHandle,fromChunks,toChunks)
 import qualified Data.ByteString.Internal as BS (ByteString(..))
+import qualified Data.ByteString as BS (empty)
 import qualified Data.ByteString.Lazy as LBS (toStrict,fromStrict)
 import Streaming as S
 import System.IO.ByteBuffer as BB (new,free,ByteBuffer) 
@@ -12,11 +13,39 @@ import qualified Streaming.Prelude as S hiding (print,show)
 import Data.IORef
 import Control.Exception (bracket)
 import Feeds.Gdax.Types (GdaxRsp,CompressedBlob(..))
-import System.IO (stdin,stdout)
+import System.IO (stdin,stdout,Handle)
 import qualified Data.Aeson as A (encode)
 
 import Data.Store.Streaming as B
-import Codec.Compression.Zlib as Z (compress,decompress)
+import Codec.Compression.Zlib as Zl (compress,decompress)
+import qualified Codec.Compression.Zstd.Streaming as Z
+
+-- Compression streamer - uses Zstd compression
+streamZstd :: (MonadIO m,Monad m) => IO Z.Result -> Stream (Of BS.ByteString) m () -> Stream (Of BS.ByteString) m ()
+streamZstd pop inp = loop inp pop
+  where
+    loop bytes res = do
+      bsinp <- liftIO res
+      case bsinp of
+        Z.Error who what -> error (who ++ ": " ++ what)
+        Z.Done bs -> (lift . S.uncons $ bytes) >>= (maybe (S.yield bs) (\_ -> error "Compress/Decompress ended while input stream still had bytes"))
+        Z.Produce bs npop -> S.yield bs >> loop bytes npop
+        -- if we run out of input stream, call loop with empty stream, and compress function with empty ByteString
+        -- to signal end - we should then be in Done state in next call to loop
+        Z.Consume f -> (lift . S.uncons $ bytes) >>= (maybe (loop (return ()) (f BS.empty)) (\(bs,nbs) -> loop nbs (f bs)))
+
+decompressZstd :: (MonadIO m,Monad m) => Stream (Of BS.ByteString) m () -> Stream (Of BS.ByteString) m ()
+decompressZstd = streamZstd Z.decompress
+
+compressZstd :: (MonadIO m,Monad m) => Int -> Stream (Of BS.ByteString) m () -> Stream (Of BS.ByteString) m ()
+compressZstd level = streamZstd (Z.compress level)
+
+compressLogZstd :: Int -> Handle -> Handle -> IO ()
+compressLogZstd level inhdl outhdl = SBS.toHandle outhdl . SBS.fromChunks . compressZstd level .  SBS.toChunks . SBS.fromHandle $ inhdl
+
+decompressLogZstd :: Handle -> Handle -> IO ()
+decompressLogZstd inhdl outhdl = SBS.toHandle outhdl . SBS.fromChunks . decompressZstd .  SBS.toChunks . SBS.fromHandle $ inhdl
+
 
 toSum :: Monad m 
       => Stream (Of (Either BS.ByteString BS.ByteString)) m r 
@@ -50,12 +79,11 @@ streamDecode bb inp = do
             Just msg -> (S.yield . fromMessage $ msg) >> go
     go 
 
-
 decompressMessage :: CompressedBlob -> BS.ByteString
-decompressMessage (Compressed inp) = LBS.toStrict . Z.decompress . LBS.fromStrict $ inp
+decompressMessage (Compressed inp) = LBS.toStrict . Zl.decompress . LBS.fromStrict $ inp
 
 compressMessage :: BS.ByteString -> CompressedBlob
-compressMessage  = Compressed . LBS.toStrict . Z.compress . LBS.fromStrict
+compressMessage  = Compressed . LBS.toStrict . Zl.compress . LBS.fromStrict
 
 -- Two-step decoding - first unwrap compressed blob, decompress, and then unwrap Gdax messages from the resulting bytes
 -- Can't use yet with zstd compression because of some kind of bug in FFI which causes out-of-memory error. Will use with

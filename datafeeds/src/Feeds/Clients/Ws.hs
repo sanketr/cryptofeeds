@@ -23,7 +23,7 @@ import System.Exit (exitSuccess)
 
 import Feeds.Gdax.Types (GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..))
 import Feeds.Clients.Utils (logWriters,LogType(..))
-import Feeds.Clients.Internal (toSum,compressMessage)
+import Feeds.Clients.Internal (toSum)
 
 -- This is a websocket client to connect to GDAX websocket feed
 client :: IO ()
@@ -43,7 +43,7 @@ streamMsgsFromConn conn = loop where
                 msg <- liftIO $ receiveData conn
                 case (msgDecode msg :: Either LBS.ByteString GdaxRsp) of
                   Left blob -> (S.yield :: a -> S.Stream (S.Of a) m ()) . Left . LBS.toStrict $ blob
-                  Right res -> (S.yield :: a -> S.Stream (S.Of a) m ()) . Right . B.encodeMessage . B.Message . compressMessage . B.encodeMessage . B.Message $ res  -- explicit type signature for S.yield because the compiler can't deduce it is the same monad m from type signature - use forall to enforce scoped types
+                  Right res -> (S.yield :: a -> S.Stream (S.Of a) m ()) . Right . B.encodeMessage . B.Message $ res  -- explicit type signature for S.yield because the compiler can't deduce it is the same monad m from type signature - use forall to enforce scoped types
                 loop
 
 logDataToFile :: Connection -> (LogType ->  BS.ByteString -> IO()) -> IO()

@@ -7,29 +7,55 @@ module Feeds.Clients.Utils
 )
 where
 
-import Control.Concurrent (MVar,newMVar,putMVar,tryPutMVar,takeMVar,tryTakeMVar,threadDelay,forkFinally)
+import Control.Concurrent (MVar,newMVar,putMVar,tryPutMVar,takeMVar,tryTakeMVar,threadDelay,forkFinally,forkIO)
 import Control.Monad (unless)
-import Control.Exception.Safe (bracketOnError)
-import System.Directory (createDirectoryIfMissing,doesFileExist)
-import System.FilePath (takeDirectory,(</>))
+import Control.Exception.Safe (bracketOnError,bracket)
+import System.Directory (createDirectoryIfMissing,doesFileExist,removeFile)
+import System.FilePath (takeDirectory,(</>),(<.>))
 import System.IO (openBinaryFile,IOMode(..),hSetBuffering, BufferMode(..),hClose)
-import GHC.IO.Handle (Handle)
+import GHC.IO.Handle.Types (Handle(..))
 import Data.Time (formatTime,defaultTimeLocale,toModifiedJulianDay,utctDay)
 import Data.Time.Clock.System (systemToUTCTime,getSystemTime)
 import Data.List (foldl')
 import Data.Char (toLower)
 import qualified Data.ByteString as BS (ByteString,hPut)
 import Control.Exception(Exception,throw)
+import Feeds.Clients.Internal (compressLogZstd)
 --import Data.Time.Clock(addUTCTime,nominalDay) -- used for testing date rollover by faking date changes
 
 -- Simple utility to open a binary file - makes sure that parent directories are created if they don't exist
-openFile :: FilePath -> IOMode -> IO Handle
-openFile fpath mode = do
+openFile :: FilePath -> IOMode -> Bool -> IO Handle
+openFile fpath mode buffered = do
   let dir = takeDirectory fpath
   createDirectoryIfMissing True dir
   h <- openBinaryFile fpath mode
-  h `hSetBuffering` NoBuffering
+  h `hSetBuffering` (if buffered then NoBuffering else BlockBuffering Nothing)
   return h
+
+getPathFromHdl :: Handle -> Maybe FilePath
+getPathFromHdl hdl = case hdl of
+                      FileHandle fpath _ -> Just fpath
+                      _ -> Nothing
+
+compressLogH :: Handle -> IO ()
+compressLogH hdl = do
+  case getPathFromHdl hdl of
+    Just fpath -> do
+                let nfpath = fpath <.> ".zst" -- Add .zst extension to file path
+                -- Compress log here, and remove uncompressed log after compression
+                bracket
+                  (openFile fpath ReadMode True)
+                  hClose $ \inphdl -> do
+                    bracket
+                      (openFile nfpath WriteMode True)
+                      hClose $ \outhdl -> do
+                            compressLogZstd 9 inphdl outhdl
+                            logExists <- doesFileExist fpath
+                            if logExists then hClose inphdl >> removeFile fpath else return ()
+    Nothing -> return () -- Not a file path. So, do nothing as no log to compress
+
+compressLog :: Maybe Handle -> IO ()
+compressLog hdl = maybe (return ()) compressLogH hdl
 
 -- a function that switches from one filepath to another
 -- Takes handle to old file path, closes it, and returns handle to new file path
@@ -45,7 +71,7 @@ switchFiles ohdl mode ctr getPath = do
   let loop num = do
             exists <- doesFileExist $ getPath num
             -- Warning - might overflow since there is no upper bound on increment
-            if exists then loop (num + 1) else openFile (getPath num) mode
+            if exists then loop (num + 1) else openFile (getPath num) mode False
   loop ctr -- return handle to new file
 {-# INLINABLE switchFiles #-}
 
@@ -83,8 +109,14 @@ logSwitcher interval logbasedir st mvar = do
             let newctr = if logdt state /= ndt then 1 else 1 + logctr state -- In case of new date, start with 1
             bracketOnError (takeMVar mvar) (putMVar mvar) $ \(h1,h2) ->
               bracketOnError (switchFiles h1 WriteMode newctr (getLogPath Normal ndtstr)) (\x -> putMVar mvar (Nothing,Nothing) >> hClose x) $ \hdl1 ->
-                bracketOnError (switchFiles h2 WriteMode newctr (getLogPath Error ndtstr)) (\x -> putMVar mvar (Nothing,Nothing) >> hClose x) $ \hdl2 ->
+                bracketOnError (switchFiles h2 WriteMode newctr (getLogPath Error ndtstr)) (\x -> putMVar mvar (Nothing,Nothing) >> hClose x) $ \hdl2 -> do
                   putMVar mvar (Just hdl1,Just hdl2) 
+                  -- Old handles h1 and h2 are already closed by switchFiles by now - ok to compress now. We
+                  -- will fork off the compression as background threads so as not to wait. If there is any
+                  -- error, it needs to be handled by an external cleanup batch script, to keep it simple.
+                  _ <- forkIO $ compressLog h1
+                  _ <- forkIO $ compressLog h2
+                  return ()
             loop LogState { logdt = ndt, logctr = newctr, logstart = False }
         else loop state
         where
@@ -125,8 +157,8 @@ logWriters interval logbasedir dieSignal = do
 -- | Just a simple baseline logwriter function for performance debugging and comparison - not for production use!
 logWritersTest :: Int -> (FilePath,FilePath) -> MVar String -> IO (LogType ->  BS.ByteString -> IO())
 logWritersTest _ logbasedir _ = do
-  hdl1 <- openFile (getLogPath Normal "test" 1) WriteMode
-  hdl2 <- openFile (getLogPath Error "test" 1) WriteMode
+  hdl1 <- openFile (getLogPath Normal "test" 1) WriteMode False
+  hdl2 <- openFile (getLogPath Error "test" 1) WriteMode False
   let fn ltyp msg = do
               case ltyp of 
                 Normal -> BS.hPut hdl1 msg
