@@ -9,7 +9,7 @@ fi
 
 
 # Find the location of binary and execute it - it will start printing heartbeat messages for now for one of the instruments
-exeloc=`find ./ -name datafeeds-exe|grep bin`
+exeloc=`find ./ -name feedlogger|grep bin`
 
 echo "Running binary" $exeloc
 $exeloc
