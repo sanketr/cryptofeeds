@@ -29,7 +29,7 @@ openFile fpath mode buffered = do
   let dir = takeDirectory fpath
   createDirectoryIfMissing True dir
   h <- openBinaryFile fpath mode
-  h `hSetBuffering` (if buffered then NoBuffering else BlockBuffering Nothing)
+  h `hSetBuffering` (if not buffered then NoBuffering else BlockBuffering Nothing)
   return h
 
 getPathFromHdl :: Handle -> Maybe FilePath
