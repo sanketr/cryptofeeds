@@ -24,7 +24,7 @@ main = do
           res <- waitCatch cl -- If the client crashes, we capture the exception that caused it to crash and restart
           ct2 <- getTimeStamp
           case res of 
-            Right e -> print (ct2 ++ ": " ++ show e) -- log error along with UTC time stamp that it happened
+            Left e -> print (ct2 ++ ": " ++ show e) -- log error along with UTC time stamp that it happened
             _ -> return ()
           (h1,h2) <- readIORef hdlinfo
           -- Close the log handles to avoid file locking error at haskell API level
