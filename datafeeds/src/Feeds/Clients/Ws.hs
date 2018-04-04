@@ -7,7 +7,8 @@ where
 
 import Wuss -- Websocket secure client - small wrapper around websockets library
 
-import Control.Concurrent (MVar,newEmptyMVar,takeMVar,putMVar,forkFinally,threadDelay)
+import Control.Concurrent (MVar,newEmptyMVar,takeMVar,putMVar,forkFinally,threadDelay,forkIO)
+import Data.IORef
 import Data.Text (pack)
 import Network.WebSockets (ClientApp, Connection, receiveData, sendClose, sendTextData)
 import Data.Aeson.Text as A (encodeToLazyText)
@@ -20,14 +21,15 @@ import qualified Data.ByteString.Lazy as LBS (ByteString,toStrict)
 import qualified Streaming.Prelude as S (Of(..), Stream, yield, mapM_,separate)
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import System.Exit (exitSuccess)
+import GHC.IO.Handle.Types (Handle)
 
 import Feeds.Gdax.Types (GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..))
 import Feeds.Clients.Utils (logWriters,LogType(..))
 import Feeds.Clients.Internal (toSum)
 
 -- This is a websocket client to connect to GDAX websocket feed
-client :: IO ()
-client = runSecureClient "ws-feed.gdax.com" 443 "/" ws
+client :: IORef (Maybe Handle,Maybe Handle) -> IO ()
+client hdlinfo = runSecureClient "ws-feed.gdax.com" 443 "/" (ws hdlinfo)
 
 -- Decode websocket json text - retain text if decoding failure else return decoded data
 msgDecode :: (A.FromJSON a, B.Store a) => LBS.ByteString -> Either LBS.ByteString a
@@ -50,14 +52,12 @@ logDataToFile :: Connection -> (LogType ->  BS.ByteString -> IO()) -> IO()
 --logDataToFile conn logMsg = S.mapM_ (either (logMsg Error) (logMsg Normal)) $ S.take 100 $ (streamMsgsFromConn conn)
 logDataToFile conn logMsg = S.mapM_ (logMsg Normal) . S.mapM_ (liftIO . logMsg Error) . S.separate . toSum . streamMsgsFromConn $ conn
               
-ws :: ClientApp ()
-ws connection = do
-  putStrLn "Connected!"
+ws :: IORef (Maybe Handle,Maybe Handle) -> ClientApp ()
+ws hdlinfo connection = do
   dieSignal <- newEmptyMVar :: IO (MVar String)
 
   -- Kick off log rotator thread - it will present us with the log handles to save data to
-  --loggers <- logWritersTest 60000000 ("test/gdax","1") dieSignal
-  loggers <- logWriters 60000000 ("logs/gdax","1") dieSignal
+  loggers <- logWriters 60000000 ("logs/gdax","1") hdlinfo dieSignal
   threadDelay 1000000 -- Delay for one second to allow for logs to be created in above background thread
 
   -- Kick off web socket data capture - this will be saved to logs using the log handles from log rotator above
@@ -69,6 +69,7 @@ ws connection = do
   -- receiving the data
   sendTextData connection req
 
+  forkIO $ threadDelay 5000000 >> putMVar dieSignal "Fake exception" 
   -- Don't do any resource cleanup before mvar otherwise we will free resources while they are in use!
   -- let us wait for procMsg to exit
   dieMsg <- takeMVar dieSignal

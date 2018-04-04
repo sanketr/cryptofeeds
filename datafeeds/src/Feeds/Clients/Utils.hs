@@ -3,11 +3,13 @@ module Feeds.Clients.Utils
 (
  logWriters,
  logWritersTest,
- LogType(..)
+ LogType(..),
+ compressLog
 )
 where
 
 import Control.Concurrent (MVar,newMVar,putMVar,tryPutMVar,takeMVar,tryTakeMVar,threadDelay,forkFinally,forkIO)
+import Data.IORef
 import Control.Monad (unless)
 import Control.Exception.Safe (bracketOnError,bracket)
 import System.Directory (createDirectoryIfMissing,doesFileExist,removeFile)
@@ -97,8 +99,8 @@ instance Show NoLogFileException where
 instance Exception NoLogFileException
 
 -- We will execute this one in a separate thread and continously monitor for date change
-logSwitcher :: Int -> (FilePath,FilePath) -> LogState -> MVar (Maybe Handle,Maybe Handle) -> IO ()
-logSwitcher interval logbasedir st mvar = do
+logSwitcher :: Int -> (FilePath,FilePath) -> IORef (Maybe Handle,Maybe Handle) -> LogState -> MVar (Maybe Handle,Maybe Handle) -> IO ()
+logSwitcher interval logbasedir hdlinfo st mvar = do
   let loop state = do
         unless (logstart state) $ threadDelay interval -- Dont delay first iteration
         (ndt,ndtstr) <- getDate
@@ -111,6 +113,7 @@ logSwitcher interval logbasedir st mvar = do
               bracketOnError (switchFiles h1 WriteMode newctr (getLogPath Normal ndtstr)) (\x -> putMVar mvar (Nothing,Nothing) >> hClose x) $ \hdl1 ->
                 bracketOnError (switchFiles h2 WriteMode newctr (getLogPath Error ndtstr)) (\x -> putMVar mvar (Nothing,Nothing) >> hClose x) $ \hdl2 -> do
                   putMVar mvar (Just hdl1,Just hdl2) 
+                  writeIORef hdlinfo (Just hdl1,Just hdl2)
                   -- Old handles h1 and h2 are already closed by switchFiles by now - ok to compress now. We
                   -- will fork off the compression as background threads so as not to wait. If there is any
                   -- error, it needs to be handled by an external cleanup batch script, to keep it simple.
@@ -127,8 +130,8 @@ logSwitcher interval logbasedir st mvar = do
 
 
 -- This function creates log writers that do log file management including rotation - async exceptions are handled
-logWriters :: Int -> (FilePath,FilePath) -> MVar String -> IO (LogType ->  BS.ByteString -> IO())
-logWriters interval logbasedir dieSignal = do
+logWriters :: Int -> (FilePath,FilePath) -> IORef (Maybe Handle,Maybe Handle) -> MVar String -> IO (LogType ->  BS.ByteString -> IO())
+logWriters interval logbasedir hdlinfo dieSignal = do
   (dt,_) <- getDate
   mvar <- newMVar (Nothing,Nothing)
   let initst = LogState { logdt = dt, logctr = 0, logstart = True}
@@ -136,7 +139,7 @@ logWriters interval logbasedir dieSignal = do
               hdls <- tryTakeMVar mvar -- mvar may not be filled in case of exception - so, don't block
               maybe (return ()) (\(h1,h2) -> mapM_ (maybe (return ()) hClose) [h1,h2]) hdls
               tryPutMVar mvar (Nothing,Nothing) >> putMVar dieSignal msg -- Make sure to put empty values in MVar
-  _ <- forkFinally (logSwitcher interval logbasedir initst mvar) (either (cleanUp . show) (const . cleanUp $ "Done with processing messages - test mode")) -- must use forkFinally to send signal to parent thread via dieSignal mvar on exception - the parent thread can then terminate itself if need be
+  _ <- forkFinally (logSwitcher interval logbasedir hdlinfo initst mvar) (either (cleanUp . show) (const . cleanUp $ "Done with processing messages - test mode")) -- must use forkFinally to send signal to parent thread via dieSignal mvar on exception - the parent thread can then terminate itself if need be
   return $ logMsg mvar
     where
       -- We get current log handle for respective log, and write to it - if for any reasons, no log handle
