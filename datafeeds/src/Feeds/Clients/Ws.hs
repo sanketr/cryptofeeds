@@ -7,7 +7,7 @@ where
 
 import Wuss -- Websocket secure client - small wrapper around websockets library
 
-import Control.Concurrent (MVar,newEmptyMVar,takeMVar,putMVar,forkFinally,threadDelay,forkIO)
+import Control.Concurrent (MVar,newEmptyMVar,takeMVar,putMVar,forkFinally,threadDelay)
 import Data.IORef
 import Data.Text (pack)
 import Network.WebSockets (ClientApp, Connection, receiveData, sendClose, sendTextData)
@@ -69,7 +69,6 @@ ws hdlinfo connection = do
   -- receiving the data
   sendTextData connection req
 
-  forkIO $ threadDelay 5000000 >> putMVar dieSignal "Fake exception" 
   -- Don't do any resource cleanup before mvar otherwise we will free resources while they are in use!
   -- let us wait for procMsg to exit
   dieMsg <- takeMVar dieSignal

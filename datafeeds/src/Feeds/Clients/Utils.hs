@@ -71,9 +71,11 @@ switchFiles ohdl mode ctr getPath = do
   -- we find a filename that hasn't been created before. This lets us handle restart from multiple crashes by
   -- creating a new log instead of accidentally overwriting an existing log
   let loop num = do
-            exists <- doesFileExist $ getPath num
+            let fname = getPath num
+            exists1 <- (doesFileExist fname)
+            exists2 <- doesFileExist (fname <.> ".zst")
             -- Warning - might overflow since there is no upper bound on increment
-            if exists then loop (num + 1) else openFile (getPath num) mode False
+            if (exists1 || exists2) then loop (num + 1) else openFile (getPath num) mode False
   loop ctr -- return handle to new file
 {-# INLINABLE switchFiles #-}
 
