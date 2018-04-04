@@ -72,10 +72,10 @@ switchFiles ohdl mode ctr getPath = do
   -- creating a new log instead of accidentally overwriting an existing log
   let loop num = do
             let fname = getPath num
-            exists1 <- (doesFileExist fname)
-            exists2 <- doesFileExist (fname <.> ".zst")
+            -- check for uncompressed as well as compressed log files
+            exists <- return . or =<< mapM doesFileExist [fname, fname <.> ".zst"]
             -- Warning - might overflow since there is no upper bound on increment
-            if (exists1 || exists2) then loop (num + 1) else openFile (getPath num) mode False
+            if exists then loop (num + 1) else openFile (getPath num) mode False
   loop ctr -- return handle to new file
 {-# INLINABLE switchFiles #-}
 

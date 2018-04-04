@@ -11,7 +11,7 @@ import System.IO.ByteBuffer as BB (new,free,ByteBuffer)
 import Data.Store (Store)
 import qualified Streaming.Prelude as S hiding (print,show)
 import Data.IORef
-import Control.Exception (bracket)
+import Control.Exception.Safe (bracket)
 import Feeds.Gdax.Types (GdaxRsp,CompressedBlob(..))
 import System.IO (stdin,stdout,Handle)
 import qualified Data.Aeson as A (encode)
@@ -101,10 +101,6 @@ decodeGdaxLog = bracket
                   BB.free
                   -- Convert to JSON format, and redirect output to stdout
                   (SBS.toHandle stdout . SBS.fromChunks  . S.map (LBS.toStrict . A.encode) . decodeGdaxLogH)
-
--- | https://ro-che.info/articles/2014-07-30-bracket
--- | Ok to use bracket pattern here because bytebuffer is internal resource. Memory will be cleaned up on main
--- | exit when bracket release won't run - see above link for note about when bracket may not clean up resources
 
 decodeGdaxCompressedLog :: IO ()
 decodeGdaxCompressedLog = bracket
