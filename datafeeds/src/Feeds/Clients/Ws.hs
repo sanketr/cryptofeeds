@@ -74,5 +74,5 @@ ws hdlinfo connection = do
   dieMsg <- takeMVar dieSignal
   -- Will replace with some kind of clean shutdown mechanism later
   sendClose connection (pack "Bye!")
-  print dieMsg -- To do - log to error log
+  putStrLn dieMsg -- To do - log to error log
   exitSuccess

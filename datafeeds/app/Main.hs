@@ -19,12 +19,12 @@ main = do
   hdlinfo <- newIORef (Nothing,Nothing)  -- we always pass a IORef to the client to let it tell us which logs were being written when it crashed. We then compress them
   let loop = do
           ct1 <- getTimeStamp 
-          print (ct1 ++ ": Started new connection") 
+          putStrLn (ct1 ++ ": Started new connection") 
           cl <- async $ C.client hdlinfo
           res <- waitCatch cl -- If the client crashes, we capture the exception that caused it to crash and restart
           ct2 <- getTimeStamp
           case res of 
-            Left e -> print (ct2 ++ ": " ++ show e) -- log error along with UTC time stamp that it happened
+            Left e -> putStrLn (ct2 ++ ": " ++ show e) -- log error along with UTC time stamp that it happened
             _ -> return ()
           (h1,h2) <- readIORef hdlinfo
           -- Close the log handles to avoid file locking error at haskell API level
