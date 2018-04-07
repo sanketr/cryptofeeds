@@ -24,11 +24,11 @@ import System.Exit (exitSuccess)
 import GHC.IO.Handle.Types (Handle)
 
 import Feeds.Gdax.Types (GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..))
-import Feeds.Clients.Utils (logWriters,LogType(..))
+import Feeds.Clients.Utils (logWriters,LogType(..),HdlInfo,putLogStr)
 import Feeds.Clients.Internal (toSum)
 
 -- This is a websocket client to connect to GDAX websocket feed
-client :: IORef (Maybe Handle,Maybe Handle) -> IO ()
+client :: IORef (Maybe HdlInfo,Maybe HdlInfo) -> IO ()
 client hdlinfo = runSecureClient "ws-feed.gdax.com" 443 "/" (ws hdlinfo)
 
 -- Decode websocket json text - retain text if decoding failure else return decoded data
@@ -52,7 +52,7 @@ logDataToFile :: Connection -> (LogType ->  BS.ByteString -> IO()) -> IO()
 --logDataToFile conn logMsg = S.mapM_ (either (logMsg Error) (logMsg Normal)) $ S.take 100 $ (streamMsgsFromConn conn)
 logDataToFile conn logMsg = S.mapM_ (logMsg Normal) . S.mapM_ (liftIO . logMsg Error) . S.separate . toSum . streamMsgsFromConn $ conn
               
-ws :: IORef (Maybe Handle,Maybe Handle) -> ClientApp ()
+ws :: IORef (Maybe HdlInfo,Maybe HdlInfo) -> ClientApp ()
 ws hdlinfo connection = do
   dieSignal <- newEmptyMVar :: IO (MVar String)
 
@@ -74,5 +74,5 @@ ws hdlinfo connection = do
   dieMsg <- takeMVar dieSignal
   -- Will replace with some kind of clean shutdown mechanism later
   sendClose connection (pack "Bye!")
-  putStrLn dieMsg -- To do - log to error log
+  putLogStr dieMsg -- To do - log to error log
   exitSuccess

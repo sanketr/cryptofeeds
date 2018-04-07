@@ -38,6 +38,8 @@ dependencies:
 - streaming-bytestring
 - zlib
 - zstd
+- cryptonite
+- memory
 
 library:
   source-dirs: src
