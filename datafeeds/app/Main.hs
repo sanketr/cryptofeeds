@@ -23,7 +23,7 @@ main = do
             Left e -> putLogStr (show e) -- log error along with UTC time stamp that it happened
             _ -> return ()
           (h1,h2) <- readIORef hdlinfo
-          putLogStr (" Closing and compressing the logs " ++ show h1 ++ "," ++ show h2)
+          putLogStr (" Closing and compressing the logs " ++ show (fmap fpath h1) ++ "," ++ show (fmap fpath h2))
           -- Close the log handles to avoid file locking error at haskell API level
           maybe (return ()) (hClose . hdl) h1 
           maybe (return ()) (hClose . hdl) h2 

@@ -7,7 +7,7 @@ where
 
 import Wuss -- Websocket secure client - small wrapper around websockets library
 
-import Control.Concurrent (MVar,newEmptyMVar,takeMVar,putMVar,forkFinally,threadDelay)
+import Control.Concurrent (MVar,newEmptyMVar,takeMVar,putMVar,forkFinally,threadDelay,killThread)
 import Data.IORef
 import Data.Text (pack)
 import Network.WebSockets (ClientApp, Connection, receiveData, sendClose, sendTextData)
@@ -57,11 +57,11 @@ ws hdlinfo connection = do
   dieSignal <- newEmptyMVar :: IO (MVar String)
 
   -- Kick off log rotator thread - it will present us with the log handles to save data to
-  loggers <- logWriters 60000000 ("logs/gdax","1") hdlinfo dieSignal
+  (ltid,loggers) <- logWriters 60000000 ("logs/gdax","1") hdlinfo dieSignal
   threadDelay 1000000 -- Delay for one second to allow for logs to be created in above background thread
 
   -- Kick off web socket data capture - this will be saved to logs using the log handles from log rotator above
-  _ <- forkFinally (logDataToFile connection loggers) (either (putMVar dieSignal . show) (\_ -> putMVar dieSignal "Done with processing messages - test mode"))
+  tid <- forkFinally (logDataToFile connection loggers) (either (putMVar dieSignal . show) (\_ -> putMVar dieSignal "Done with processing messages - test mode"))
 
   -- Let us build and send a JSON request for heartbeat to ETH-EUR instrument
   let req = A.encodeToLazyText Request {_req_type = Subscribe, _req_channels = RequestMsg $ map (\(reqtyp,prdids) -> Channels {_channel_name = reqtyp, _channel_product_ids = prdids}) [(HeartbeatTyp,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"]),(Level2Typ,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"]),(TickerTyp,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"])]}
@@ -72,6 +72,10 @@ ws hdlinfo connection = do
   -- Don't do any resource cleanup before mvar otherwise we will free resources while they are in use!
   -- let us wait for procMsg to exit
   dieMsg <- takeMVar dieSignal
+  putLogStr "Killing logger thread before exit"
+  killThread ltid
+  putLogStr "Killing logger parent thread before exit"
+  killThread tid
   -- Will replace with some kind of clean shutdown mechanism later
   sendClose connection (pack "Bye!")
   putLogStr dieMsg -- To do - log to error log

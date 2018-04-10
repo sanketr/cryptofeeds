@@ -11,7 +11,7 @@ module Feeds.Clients.Utils
 )
 where
 
-import Control.Concurrent (MVar,newMVar,putMVar,tryPutMVar,takeMVar,tryTakeMVar,threadDelay,forkFinally,forkIO)
+import Control.Concurrent (MVar,newMVar,putMVar,tryPutMVar,takeMVar,tryTakeMVar,threadDelay,forkFinally,forkIO,ThreadId)
 import Data.IORef
 import Control.Monad (unless)
 import Control.Exception.Safe (bracketOnError,bracket)
@@ -111,7 +111,7 @@ getDate  = do
 data LogState = LogState {logdt:: Integer, logctr:: Int, logstart :: Bool } deriving (Show)
 data LogType = Normal | Error deriving (Show)
 
-data HdlInfo = HdlInfo { hdl :: Handle, fpath :: FilePath } deriving (Show)
+data HdlInfo = HdlInfo {hdl :: Handle, fpath :: FilePath} deriving (Show)
 
 data NoLogFileException = NormalLogException String | ErrorLogException String
 
@@ -154,7 +154,7 @@ logSwitcher interval logbasedir hdlinfo st mvar = do
 
 
 -- This function creates log writers that do log file management including rotation - async exceptions are handled
-logWriters :: Int -> (FilePath,FilePath) -> IORef (Maybe HdlInfo,Maybe HdlInfo) -> MVar String -> IO (LogType ->  BS.ByteString -> IO())
+logWriters :: Int -> (FilePath,FilePath) -> IORef (Maybe HdlInfo,Maybe HdlInfo) -> MVar String -> IO (ThreadId,LogType ->  BS.ByteString -> IO())
 logWriters interval logbasedir hdlinfo dieSignal = do
   (dt,_) <- getDate
   mvar <- newMVar (Nothing,Nothing)
@@ -163,8 +163,8 @@ logWriters interval logbasedir hdlinfo dieSignal = do
               hdls <- tryTakeMVar mvar -- mvar may not be filled in case of exception - so, don't block
               maybe (return ()) (\(h1,h2) -> mapM_ (maybe (return ()) (hClose . hdl)) [h1,h2]) hdls
               tryPutMVar mvar (Nothing,Nothing) >> putMVar dieSignal msg -- Make sure to put empty values in MVar
-  _ <- forkFinally (logSwitcher interval logbasedir hdlinfo initst mvar) (either (cleanUp . show) (const . cleanUp $ "Done with processing messages - test mode")) -- must use forkFinally to send signal to parent thread via dieSignal mvar on exception - the parent thread can then terminate itself if need be
-  return $ logMsg mvar
+  tid <- forkFinally (logSwitcher interval logbasedir hdlinfo initst mvar) (either (cleanUp . show) (const . cleanUp $ "Done with processing messages - test mode")) -- must use forkFinally to send signal to parent thread via dieSignal mvar on exception - the parent thread can then terminate itself if need be
+  return (tid, logMsg mvar)
     where
       -- We get current log handle for respective log, and write to it - if for any reasons, no log handle
       -- is found, an exception is thrown which will kill the main thread. We can add logic to restart the
