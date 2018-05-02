@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Main
+module Feeds.Clients.Orderbook
 
 where
 
@@ -15,22 +15,57 @@ import Data.Ord(Down(..),comparing)
 import qualified Data.HashTable.IO as H
 import qualified Data.Map.Strict as Map 
 import Criterion.Main
-import Streaming.Prelude as S (yield)
-import Streaming as S (Stream,Of)
+import Streaming.Prelude as S (yield,uncons)
+import Streaming as S (Stream,Of,lift)
 import Control.Monad.IO.Class (liftIO)
 
 type HashTable k v = H.LinearHashTable k v
 
-updMap :: (Ord k, Eq a, Num a)=> Int -> Map.Map k a -> [(k,a)] -> Map.Map k a
-updMap bnd obook vals = foldl' (\dict (k,_) -> Map.delete k dict) res delKeys
+updMap :: (Ord k, Eq a, Num a)=> (Map.Map k a -> [(k,a)]) -> Int -> Map.Map k a -> [(k,a)] -> Map.Map k a
+updMap sortFn bnd obook vals = foldl' (\dict (k,_) -> Map.delete k dict) res delKeys
     where res = foldl' (\dict (k,v) -> if v /=0 then Map.insert k v dict else Map.delete k dict) obook vals
-          kl = Map.toAscList res
+          kl = sortFn res
           delKeys = Prelude.drop bnd kl 
+{-#INLINE updMap #-}
 
-foo :: Stream (Of [(Float,Float)]) IO ()
-foo = do
+updMapAsk :: (Ord k, Eq a, Num a)=>  Int -> Map.Map k a -> [(k,a)] -> Map.Map k a
+updMapAsk = updMap Map.toAscList
+
+updMapBid ::  (Ord k, Eq a, Num a)=>  Int -> Map.Map k a -> [(k,a)] -> Map.Map k a
+updMapBid = updMap Map.toDescList
+
+-- TODO: hashtable on time,seq,hmap - we update seq on upd, time on trade, hmap on upd or snap (new hmap)
+-- Return Obook on snap or update
+updateHTbl :: HashTable T.Text (Maybe T.Text) -> GdaxRsp -> IO ()
+updateHTbl ht inp = do
+  case inp of
+    GdRTick t -> H.insert ht (_tick_product_id t) (_tick_time t) -- Set ticker time to last seen trade time
+    GdRSnap s -> H.insert ht (_snp_product_id s) Nothing -- Reset ticker time to Nothing on snapshot
+    GdRL2Up u -> return ()
+    _         -> return ()
+
+updObookH :: HashTable T.Text (Maybe T.Text) -> Stream (Of GdaxRsp) IO () -> Stream (Of Obook) IO ()
+updObookH ht inpstr = do
+  go inpstr
+  where go inp = do
+            r <- lift $ S.uncons inp
+            case r of
+              Nothing -> return ()
+              Just (inp,rest) -> do
+                -- First update the hashtable with last seen trade time for ticker
+                lift $ updateHTbl ht inp
+                -- TODO: Generate orderbook and yield -- change updateHtbl return to maybe Obook
+                go rest
+            
+updObook :: Stream (Of GdaxRsp) IO () -> Stream (Of Obook) IO ()
+updObook inpstr = do
+  ht <-  lift (H.new :: IO (HashTable T.Text (Maybe T.Text)))
+  updObookH ht inpstr
+
+foo :: HashTable Float Float -> GdaxRsp -> Stream (Of [(Float,Float)]) IO ()
+foo ht inp = do
   r <- liftIO $ do
-    ht <- H.new :: IO (HashTable Float Float)
+    --ht <- H.new :: IO (HashTable Float Float)
     H.insert ht 1 1
     H.insert ht 2 2
     H.insert ht 3 3
@@ -56,24 +91,36 @@ foo = do
 getNumPairs :: [(T.Text,T.Text)] -> [(Float,Float)]
 getNumPairs = Prelude.map (\(Right x,Right y) -> (fst x,fst y)) . Prelude.filter (\x -> (isRight . fst $ x) && (isRight . snd $ x)) . Prelude.map (\(x,y) -> (rational x,rational y))
 
-getSides :: ([(Float,Float)] -> [(Float,Float)]) -> Int ->  [(T.Text,T.Text)] -> [(Float,Float)]
-getSides fn cnt = Prelude.take cnt . fn . sortOn fst .  getNumPairs 
+getSides :: ((Float,Float) -> (Float,Float) ->  Ordering) -> Int ->  [(T.Text,T.Text)] -> [(Float,Float)]
+getSides sortFn cnt = Prelude.take cnt . sortBy sortFn .  getNumPairs 
+{-# INLINE getSides #-}
+
+getBids ::  Int ->  [(T.Text,T.Text)] -> [(Float,Float)]
+getBids = getSides  (comparing (Down . fst))
+
+getAsks ::  Int ->  [(T.Text,T.Text)] -> [(Float,Float)]
+getAsks = getSides  (comparing fst)
 
 main = do
   json <- BL.readFile "../../testdata/snapshot.json"
   updjson <- BL.readFile "../../testdata/l2update.json"
   let snap = fromJust (A.decode json :: Maybe Snapshot)
-      upds = getNumPairs $ Prelude.map (\(_,y,z) -> (y,z)) $ Prelude.filter (\(x,_,_) -> x == "sell") $ _l2upd_changes $ fromJust (A.decode updjson :: Maybe L2Update)
-      bids5 = getSides Prelude.reverse 5 . _snp_bids $ snap
-      asks5 = getSides id 5 . _snp_asks $ snap
+      (updasks,updbids) = (\(x,y) -> (getNumPairs x,getNumPairs y)) $ foldl' (\(alist,blist) (x,y,z) -> if x == "sell" then (((y,z)):alist,blist) else if x == "buy" then (alist, ((y,z)): blist) else (alist,blist)) ([],[]) $ _l2upd_changes $ fromJust (A.decode updjson :: Maybe L2Update)
+      bids5 = getBids 5 . _snp_bids $ snap
+      asks5 = getAsks 5 . _snp_asks $ snap
       bidMap = Map.fromList bids5
       askMap = Map.fromList asks5
+  {--
   defaultMain [
-      bgroup "orderbook update" [ bench "Top 5" $ whnf (updMap 5 askMap) upds]
+      bgroup "orderbook update" [ bench "Top 5" $ whnf (updMap 5 askMap) updasks]
     ]
-  --print asks5
-  --print bids5
-  --print upds
+  --}
+  print asks5
+  print bids5
+  print updasks
+  print updbids
+  print $ Map.toAscList $ updMapAsk 5 askMap updasks
+  print $ Map.toDescList $ updMapBid 5 bidMap updbids
 
   -- TODO:
   -- need previous date (start with current date), previous seq num (start with 0), next trade time, previous trade time
