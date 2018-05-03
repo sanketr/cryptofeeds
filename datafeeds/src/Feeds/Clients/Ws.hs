@@ -67,7 +67,7 @@ ws hdlinfo connection = do
   let req = A.encodeToLazyText Request {_req_type = Subscribe, _req_channels = RequestMsg $ map (\(reqtyp,prdids) -> Channels {_channel_name = reqtyp, _channel_product_ids = prdids}) [(HeartbeatTyp,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"]),(Level2Typ,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"]),(TickerTyp,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"])]}
   -- Send heartbeat subscription message - this will cause logDataToFile function kicked off above to start 
   -- receiving the data
-  sendTextData connection req
+  _ <- forkFinally (sendTextData connection req) (either (putMVar dieSignal . show) (\_ -> return ()))
 
   -- Don't do any resource cleanup before mvar otherwise we will free resources while they are in use!
   -- let us wait for procMsg to exit

@@ -95,6 +95,14 @@ streamDecodeCompressed (bb1,bb2) = streamDecode bb1 . S.map decompressMessage . 
 decodeGdaxLogH :: ByteBuffer -> Stream (Of GdaxRsp) IO ()
 decodeGdaxLogH bb = streamDecode bb . SBS.toChunks . SBS.fromHandle $ stdin
 
+-- TODO: Add a state machine for order book and trades
+-- State machine: 
+-- Initialization: snapshot must exist before l2update when starting. Else error out, and ask for snapshot log - hint it is normally a log that starts with 1
+-- 1. Update snapshot map with l2update. 
+-- 2. Get the previous trade time and next trade time - set order book time to mid way
+-- 3. Seq num lets us keep track of order book evolution given same time
+-- 4. Reset seq num on date roll over
+
 decodeGdaxLog :: IO ()
 decodeGdaxLog = bracket
                   (BB.new Nothing)

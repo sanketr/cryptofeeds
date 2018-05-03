@@ -12,6 +12,7 @@ module Feeds.Gdax.Types
  Snapshot(..),
  L2Update(..),
  GdaxRsp(..),
+ Obook(..),
  CompressedBlob(..)
 )
 
@@ -62,6 +63,14 @@ instance Store Snapshot
 data L2Update = L2Update { _l2upd_type :: RspTyp ,_l2upd_product_id :: T.Text, _l2upd_changes :: [(T.Text,T.Text,T.Text)]} deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 7,constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''L2Update
 instance Store L2Update
+
+-- Type to parse order book - order book is built from snapshots and updates - it doesn't have time which we will need to guess from trades for now. Need to add line time in UTC for order book capture
+data ObookState = OUpd L2Update | OInit Snapshot deriving (Show, Generic,Typeable)
+
+data Obook = Obook { _obook_timestamp :: T.Text, _obook_seqnum :: Int, _obook_bids :: [(Float,Float)], _obook_asks :: [(Float,Float)] } deriving  (Show, Generic,Typeable)
+deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 7,constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''Obook
+instance Store Obook
+
 
 data GdaxRsp = GdRHb Heartbeat | GdRTick Ticker | GdRSnap Snapshot | GdRL2Up L2Update deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{omitNothingFields = True, sumEncoding  = UntaggedValue} ''GdaxRsp

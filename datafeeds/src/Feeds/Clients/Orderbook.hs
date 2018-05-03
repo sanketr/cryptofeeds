@@ -7,7 +7,7 @@ import Data.ByteString.Lazy as BL hiding (foldl')
 import Data.Maybe (fromJust,isJust)
 import Data.Either (isRight,partitionEithers)
 import Data.Text.Read (rational)
-import Data.Text as T (Text)
+import Data.Text as T (Text,empty,null,take)
 import Feeds.Gdax.Types
 import Data.Aeson as A (decode)
 import Data.List (sortOn,sortBy,foldl')
@@ -15,7 +15,7 @@ import Data.Ord(Down(..),comparing)
 import qualified Data.HashTable.IO as H
 import qualified Data.Map.Strict as Map 
 import Criterion.Main
-import Streaming.Prelude as S (yield,uncons)
+import Streaming.Prelude as S (mapMaybeM)
 import Streaming as S (Stream,Of,lift)
 import Control.Monad.IO.Class (liftIO)
 
@@ -34,58 +34,87 @@ updMapAsk = updMap Map.toAscList
 updMapBid ::  (Ord k, Eq a, Num a)=>  Int -> Map.Map k a -> [(k,a)] -> Map.Map k a
 updMapBid = updMap Map.toDescList
 
--- TODO: hashtable on time,seq,hmap - we update seq on upd, time on trade, hmap on upd or snap (new hmap)
--- Return Obook on snap or update
-updateHTbl :: HashTable T.Text (Maybe T.Text) -> GdaxRsp -> IO ()
-updateHTbl ht inp = do
-  case inp of
-    GdRTick t -> H.insert ht (_tick_product_id t) (_tick_time t) -- Set ticker time to last seen trade time
-    GdRSnap s -> H.insert ht (_snp_product_id s) Nothing -- Reset ticker time to Nothing on snapshot
-    GdRL2Up u -> return ()
-    _         -> return ()
+--  Time (Text), Seq (Int), bidMap, askMap - it is keyed by ticker in a hashtable - we use this to 
+-- build orderbook 
+data OMap = OMap !T.Text !Int !(Map.Map Float Float) !(Map.Map Float Float) deriving Show
 
-updObookH :: HashTable T.Text (Maybe T.Text) -> Stream (Of GdaxRsp) IO () -> Stream (Of Obook) IO ()
-updObookH ht inpstr = do
-  go inpstr
-  where go inp = do
-            r <- lift $ S.uncons inp
-            case r of
-              Nothing -> return ()
-              Just (inp,rest) -> do
-                -- First update the hashtable with last seen trade time for ticker
-                lift $ updateHTbl ht inp
-                -- TODO: Generate orderbook and yield -- change updateHtbl return to maybe Obook
-                go rest
-            
-updObook :: Stream (Of GdaxRsp) IO () -> Stream (Of Obook) IO ()
-updObook inpstr = do
-  ht <-  lift (H.new :: IO (HashTable T.Text (Maybe T.Text)))
-  updObookH ht inpstr
+updOMap :: OMap -> T.Text -> Int -> [(Text,Text,Text)] -> OMap
+updOMap (OMap otm oseq bmap amap) ntm nseq l2upds = OMap ntm nseq (updMapBid 50 bmap undefined) (updMapAsk 50 amap undefined)
 
-foo :: HashTable Float Float -> GdaxRsp -> Stream (Of [(Float,Float)]) IO ()
-foo ht inp = do
-  r <- liftIO $ do
-    --ht <- H.new :: IO (HashTable Float Float)
-    H.insert ht 1 1
-    H.insert ht 2 2
-    H.insert ht 3 3
-    H.insert ht 4 4
-    H.insert ht 5 5
-    H.insert ht 6 6
-    kvs <- H.toList ht
-    print $ kvs
-    let dropKeys = Prelude.map fst . Prelude.drop 5 . sortBy (comparing (Down . fst)) $ kvs -- use Down for ask
-    _ <- mapM_ (H.delete ht) dropKeys
-    H.toList ht
-  S.yield r
-    -- TODO - get toList of [k,v] - if greater than the size after every insertion, find maximum (ask) or minimum (bid) and delete it. Then, yield as streaming
+-- Function to determine if the current time has same date as previous time - if not equal, True
+-- else False. This is used to reset orderbook sequence number
+-- Time from GDAX is like this in UTC: "2018-04-26T09:53:27.357000Z"
+resetSeq :: T.Text -> T.Text -> Int -> Int
+resetSeq ptime ntime pseq = case (T.null ptime || (T.take 10 ptime) == (T.take 10 ntime)) of
+  -- retain the sequence as long as previous time is empty or current date = previous date. Don't want to reset on first update after snapshot when new time is not empty but previous time is empty
+  True -> pseq 
+  False -> 0
 
-
--- Initialization: snapshot must exist before l2update when starting. Else error out, and ask for snapshot log - hint it is normally a log that starts with 1
+-- Initialization: snapshot must exist before l2update when starting. Else error out, and ask for snapshot log - provide hint it is normally a log that starts with 1
 -- 1. Update snapshot map with l2update. 
--- 2. Get the previous trade time and next trade time - set order book time to mid way
+-- 2. Get the current trade time - set order book time to current trade time
 -- 3. Seq num lets us keep track of order book evolution given same time
 -- 4. Reset seq num on date roll over
+-- Return Obook on snap or l2 update
+updateHTbl :: HashTable T.Text OMap -> Int -> GdaxRsp -> IO (Maybe Obook)
+updateHTbl ht sz inp = do
+  case inp of
+    -- Update time in OMap if OMap exists
+    GdRTick t -> do
+          let ticker = _tick_product_id t
+              ntm = maybe T.empty id (_tick_time t)
+          omap <- H.lookup ht ticker
+          -- Replace old time with new time in OMap - evaluates to Just if OMap exists, reset sequence on date rollover
+          let nomap = fmap (\(OMap otm oseq bmap amap) -> OMap ntm (resetSeq otm ntm oseq) bmap amap) omap  
+          -- Update the OMap for ticker if it exists
+          maybe (return ()) (H.insert ht ticker) nomap
+          return Nothing 
+
+    -- Update time to Empty in OMap, update maps, output new obook
+    GdRSnap s -> do
+          let ticker = _snp_product_id s
+              -- GDAX level 2 is of depth 50
+              bids50 = getBids 50 . _snp_bids $ s
+              asks50 = getAsks 50 . _snp_asks $ s
+              bidMap = Map.fromList bids50
+              askMap = Map.fromList asks50
+          omap <- H.lookup ht ticker
+          -- if OMap exists, increment old seqnum, and build new OMap with empty time, new bid/ask maps
+          let nomap = maybe (OMap "" 0 bidMap askMap) (\(OMap _ oseq _ _) -> OMap "" (1 + oseq) bidMap askMap) omap
+          H.insert ht ticker nomap
+          -- output order book with empty time
+          (return . Just $ Obook { _obook_timestamp = "", _obook_seqnum = (\(OMap _ seq _ _) -> seq) nomap, _obook_bids = (Prelude.take sz bids50), _obook_asks = (Prelude.take sz asks50)})
+
+    -- Update seq, askmap, bidmap in OMap, output new obook
+    GdRL2Up u -> do
+          let ticker = _l2upd_product_id u
+              (updasks,updbids) = (\(x,y) -> (getNumPairs x,getNumPairs y)) $ foldl' (\(alist,blist) (x,y,z) -> if x == "sell" then (((y,z)):alist,blist) else if x == "buy" then (alist, ((y,z)): blist) else (alist,blist)) ([],[]) $ _l2upd_changes $ u
+          -- get current OMap
+          --  - do nothing if OMap doesn't exist which is not a valid state btw - snapshots must always precede l2 updates
+          --  - if OMap exists, update seq, maps, output new obook
+          omap <- H.lookup ht ticker
+          maybe 
+            (return Nothing)  
+            (\(OMap otm oseq bmap amap) -> do
+                                    let nbmap = updMapBid 50 bmap updbids
+                                        namap = updMapAsk 50 amap updasks
+                                        nseq = oseq + 1 
+                                        nomap = OMap otm nseq nbmap namap
+                                        nbids = Prelude.take sz . Map.toDescList $ nbmap
+                                        nasks = Prelude.take sz . Map.toAscList $ namap
+                                    H.insert ht ticker nomap
+                                    return . Just $ Obook { _obook_timestamp = otm, _obook_seqnum = nseq, _obook_bids = nbids, _obook_asks = nasks}) 
+            omap
+
+    _         -> return Nothing
+
+updObookH :: HashTable T.Text OMap -> Int -> Stream (Of GdaxRsp) IO () -> Stream (Of Obook) IO ()
+updObookH ht sz inpstr = S.mapMaybeM (updateHTbl ht sz) inpstr
+              
+updObook :: Int -> Stream (Of GdaxRsp) IO () -> Stream (Of Obook) IO ()
+updObook sz inpstr = do
+  ht <-  lift H.new
+  updObookH ht sz inpstr
 
 -- Function to parse pair of floats from text, and filter only the values that are valid
 getNumPairs :: [(T.Text,T.Text)] -> [(Float,Float)]
