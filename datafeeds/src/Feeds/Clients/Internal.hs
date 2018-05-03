@@ -5,7 +5,7 @@ where
 import qualified Data.ByteString.Streaming as SBS (fromHandle,toHandle,fromChunks,toChunks)
 import qualified Data.ByteString.Internal as BS (ByteString(..))
 import qualified Data.ByteString as BS (empty)
-import qualified Data.ByteString.Lazy as LBS (toStrict,fromStrict)
+import qualified Data.ByteString.Lazy as LBS (toStrict,fromStrict,append)
 import Streaming as S
 import System.IO.ByteBuffer as BB (new,free,ByteBuffer) 
 import Data.Store (Store)
@@ -107,8 +107,8 @@ decodeGdaxLog :: IO ()
 decodeGdaxLog = bracket
                   (BB.new Nothing)
                   BB.free
-                  -- Convert to JSON format, and redirect output to stdout
-                  (SBS.toHandle stdout . SBS.fromChunks  . S.map (LBS.toStrict . A.encode) . decodeGdaxLogH)
+                  -- Convert to JSON format, add new line and redirect output to stdout
+                  (SBS.toHandle stdout . SBS.fromChunks  . S.map (LBS.toStrict . LBS.append "\n" . A.encode) . decodeGdaxLogH)
 
 decodeGdaxCompressedLog :: IO ()
 decodeGdaxCompressedLog = bracket

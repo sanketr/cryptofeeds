@@ -38,9 +38,6 @@ updMapBid = updMap Map.toDescList
 -- build orderbook 
 data OMap = OMap !T.Text !Int !(Map.Map Float Float) !(Map.Map Float Float) deriving Show
 
-updOMap :: OMap -> T.Text -> Int -> [(Text,Text,Text)] -> OMap
-updOMap (OMap otm oseq bmap amap) ntm nseq l2upds = OMap ntm nseq (updMapBid 50 bmap undefined) (updMapAsk 50 amap undefined)
-
 -- Function to determine if the current time has same date as previous time - if not equal, True
 -- else False. This is used to reset orderbook sequence number
 -- Time from GDAX is like this in UTC: "2018-04-26T09:53:27.357000Z"
@@ -50,7 +47,8 @@ resetSeq ptime ntime pseq = case (T.null ptime || (T.take 10 ptime) == (T.take 1
   True -> pseq 
   False -> 0
 
--- Initialization: snapshot must exist before l2update when starting. Else error out, and ask for snapshot log - provide hint it is normally a log that starts with 1
+-- | Order book generation |
+-- Initialization: snapshot must exist before l2update when starting. TODO: Error out if no snapshot, and ask for snapshot log - provide hint it is normally a log that starts with 1
 -- 1. Update snapshot map with l2update. 
 -- 2. Get the current trade time - set order book time to current trade time
 -- 3. Seq num lets us keep track of order book evolution given same time
@@ -59,7 +57,7 @@ resetSeq ptime ntime pseq = case (T.null ptime || (T.take 10 ptime) == (T.take 1
 updateHTbl :: HashTable T.Text OMap -> Int -> GdaxRsp -> IO (Maybe Obook)
 updateHTbl ht sz inp = do
   case inp of
-    -- Update time in OMap if OMap exists
+    -- Trades - Update time in OMap if OMap exists
     GdRTick t -> do
           let ticker = _tick_product_id t
               ntm = maybe T.empty id (_tick_time t)
@@ -70,7 +68,7 @@ updateHTbl ht sz inp = do
           maybe (return ()) (H.insert ht ticker) nomap
           return Nothing 
 
-    -- Update time to Empty in OMap, update maps, output new obook
+    -- Snapshot - Update time to Empty in OMap, update maps, output new obook
     GdRSnap s -> do
           let ticker = _snp_product_id s
               -- GDAX level 2 is of depth 50
@@ -79,13 +77,13 @@ updateHTbl ht sz inp = do
               bidMap = Map.fromList bids50
               askMap = Map.fromList asks50
           omap <- H.lookup ht ticker
-          -- if OMap exists, increment old seqnum, and build new OMap with empty time, new bid/ask maps
+          -- if OMap exists, only keep seq information
           let nomap = maybe (OMap "" 0 bidMap askMap) (\(OMap _ oseq _ _) -> OMap "" (1 + oseq) bidMap askMap) omap
           H.insert ht ticker nomap
           -- output order book with empty time
-          (return . Just $ Obook { _obook_timestamp = "", _obook_seqnum = (\(OMap _ seq _ _) -> seq) nomap, _obook_bids = (Prelude.take sz bids50), _obook_asks = (Prelude.take sz asks50)})
+          (return . Just $ Obook { _obook_timestamp = "", _obook_ticker = ticker, _obook_seqnum = (\(OMap _ cseq _ _) -> cseq) nomap, _obook_bids = (Prelude.take sz bids50), _obook_asks = (Prelude.take sz asks50)})
 
-    -- Update seq, askmap, bidmap in OMap, output new obook
+    -- L2 updates - Update seq, askmap, bidmap in OMap, output new obook
     GdRL2Up u -> do
           let ticker = _l2upd_product_id u
               (updasks,updbids) = (\(x,y) -> (getNumPairs x,getNumPairs y)) $ foldl' (\(alist,blist) (x,y,z) -> if x == "sell" then (((y,z)):alist,blist) else if x == "buy" then (alist, ((y,z)): blist) else (alist,blist)) ([],[]) $ _l2upd_changes $ u
@@ -103,7 +101,7 @@ updateHTbl ht sz inp = do
                                         nbids = Prelude.take sz . Map.toDescList $ nbmap
                                         nasks = Prelude.take sz . Map.toAscList $ namap
                                     H.insert ht ticker nomap
-                                    return . Just $ Obook { _obook_timestamp = otm, _obook_seqnum = nseq, _obook_bids = nbids, _obook_asks = nasks}) 
+                                    return . Just $ Obook { _obook_timestamp = otm, _obook_ticker = ticker, _obook_seqnum = nseq, _obook_bids = nbids, _obook_asks = nasks}) 
             omap
 
     _         -> return Nothing
@@ -150,12 +148,5 @@ main = do
   print updbids
   print $ Map.toAscList $ updMapAsk 5 askMap updasks
   print $ Map.toDescList $ updMapBid 5 bidMap updbids
-
-  -- TODO:
-  -- need previous date (start with current date), previous seq num (start with 0), next trade time, previous trade time
-  -- build a map of bids and asks per instrument - update the map on new entries - use hashtables
-  -- filter on parsed values of bids and asks - take top n
-  -- dig out Hashtables linear example
-  -- Increment seq num, reset to 0 on date rollover vs previous date 
   return ()
   
