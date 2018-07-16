@@ -26,9 +26,10 @@ import Data.Char (toLower)
 import qualified Data.ByteString as BS (ByteString,hPut)
 import Control.Exception(Exception,throw)
 import Feeds.Clients.Internal (compressLogZstd)
-import Data.ByteArray.Encoding (convertToBase, Base (Base64))
+import Data.ByteArray.Encoding (convertToBase, convertFromBase, Base (Base64))
 import Crypto.Hash (HashAlgorithm, Digest)
 import Crypto.MAC.HMAC (hmac, hmacGetDigest)
+import Crypto.Hash.Algorithms(SHA256)
 --import Data.Time.Clock(addUTCTime,nominalDay) -- used for testing date rollover by faking date changes
 
 signMsg :: (HashAlgorithm a) => BS.ByteString -> BS.ByteString -> Digest a

@@ -13,7 +13,9 @@ module Feeds.Gdax.Types
  L2Update(..),
  GdaxRsp(..),
  Obook(..),
- CompressedBlob(..)
+ GdaxAPIKeys (..),
+ GdaxAuthReq(..),
+ GdaxAccountResponse(..)
 )
 
 where
@@ -71,13 +73,23 @@ data Obook = Obook { _obook_timestamp :: T.Text, _obook_ticker :: T.Text, _obook
 deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 7,constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''Obook
 instance Store Obook
 
+-- This equality derivation is useful to determine if orderbook bids/asks have changed, and to publish order book
+-- in case of change
+instance Eq Obook where
+  a == b = (_obook_ticker a == _obook_ticker b) && (_obook_bids a == _obook_bids b) &&(_obook_asks a == _obook_asks b)
+
 
 data GdaxRsp = GdRHb Heartbeat | GdRTick Ticker | GdRSnap Snapshot | GdRL2Up L2Update deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{omitNothingFields = True, sumEncoding  = UntaggedValue} ''GdaxRsp
 instance Store GdaxRsp
 
--- We use the data structure below to compress data, and use Store library to implement streaming
--- decompression - that way, we are not at the mercy of compression algorithm for solid streaming
--- implementation 
-data CompressedBlob = Compressed !BS.ByteString deriving (Show,Generic,Typeable)
-instance Store CompressedBlob
+-- ApiKey - secret, pass, key
+data GdaxAPIKeys = GdaxAPIKeys BS.ByteString BS.ByteString BS.ByteString deriving (Show, Generic,Typeable)
+
+-- Gdax Auth Req Method Type (all upper case), URL, Json Body
+data GdaxAuthReq = GdaxAuthReq BS.ByteString BS.ByteString BS.ByteString deriving (Show, Generic,Typeable)
+
+data GdaxAccountResponse = GdaxAccountResponse { _acctResp_id:: T.Text, _acctResp_currency:: T.Text, _acctResp_balance:: T.Text, _acctResp_available:: T.Text, _acctResp_hold:: T.Text, _acctResp_profile_id:: T.Text} deriving (Show, Generic,Typeable)
+deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 10,constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''GdaxAccountResponse
+instance Store GdaxAccountResponse
+

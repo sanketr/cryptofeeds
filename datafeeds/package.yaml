@@ -21,8 +21,17 @@ description:         Please see the README on Github at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
+- containers
+- criterion
+- configurator
 - filepath
 - directory
+- hashtables
+- http-client
+- http-conduit
+- http-types
+- hedgehog
+- tasty-hedgehog
 - aeson
 - websockets
 - bytestring
@@ -40,6 +49,7 @@ dependencies:
 - zstd
 - cryptonite
 - memory
+- unix
 
 library:
   source-dirs: src
