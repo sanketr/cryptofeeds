@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings,ScopedTypeVariables,DeriveGeneric,TemplateHaskell,BangPatterns #-}
 
-module Feeds.Gdax.Types
+module Feeds.Gdax.Types.MarketData
 (
  Channels(..),
  ReqTyp(..),
@@ -14,8 +14,7 @@ module Feeds.Gdax.Types
  GdaxRsp(..),
  Obook(..),
  GdaxAPIKeys (..),
- GdaxAuthReq(..),
- GdaxAccountResponse(..)
+ GdaxAuthReq(..)
 )
 
 where
@@ -28,6 +27,7 @@ import Data.Text as T (Text)
 import Data.Char (toLower)
 import Data.Int (Int64)
 import Data.ByteString as BS (ByteString)
+import Feeds.Common.Parsers
 
 data ReqTyp = Subscribe | Unsubscribe deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''ReqTyp
@@ -46,11 +46,11 @@ data RequestMsg = RequestMsg [Channels] deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''RequestMsg
 instance Store RequestMsg
 
-data Request = Request { _req_type :: ReqTyp, _req_channels :: RequestMsg } deriving (Show, Generic,Typeable)
+data Request = Request { _req_user_id :: Maybe T.Text, _req_type :: ReqTyp, _req_channels :: RequestMsg } deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 5,constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''Request
 instance Store Request
 
-data Heartbeat = Heartbeat { _hb_type :: RspTyp, _hb_sequence:: Int64, _hb_last_trade_id :: Int64, _hb_product_id :: T.Text, _hb_time :: T.Text } deriving (Show, Generic,Typeable)
+data Heartbeat = Heartbeat { _hb_user_id :: Maybe T.Text, _hb_type :: RspTyp, _hb_sequence:: Int64, _hb_last_trade_id :: Int64, _hb_product_id :: T.Text, _hb_time :: T.Text } deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 4,constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''Heartbeat 
 instance Store Heartbeat
 
@@ -88,8 +88,3 @@ data GdaxAPIKeys = GdaxAPIKeys BS.ByteString BS.ByteString BS.ByteString derivin
 
 -- Gdax Auth Req Method Type (all upper case), URL, Json Body
 data GdaxAuthReq = GdaxAuthReq BS.ByteString BS.ByteString BS.ByteString deriving (Show, Generic,Typeable)
-
-data GdaxAccountResponse = GdaxAccountResponse { _acctResp_id:: T.Text, _acctResp_currency:: T.Text, _acctResp_balance:: T.Text, _acctResp_available:: T.Text, _acctResp_hold:: T.Text, _acctResp_profile_id:: T.Text} deriving (Show, Generic,Typeable)
-deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 10,constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''GdaxAccountResponse
-instance Store GdaxAccountResponse
-

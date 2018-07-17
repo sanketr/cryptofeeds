@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Feeds.Common.Orders
+module Feeds.Gdax.Orders
 where
 
 import Network.HTTP.Types.Header(HeaderName(..))
@@ -21,7 +21,8 @@ import Data.Maybe (fromJust,isJust)
 import qualified Data.Configurator.Types as C (Value,Config)
 import qualified Data.Configurator as C (load, Worth(..), lookup)
 import Feeds.Common.Types (Environ(..))
-import Feeds.Gdax.Types (GdaxAPIKeys(..),GdaxAuthReq(..),GdaxAccountResponse)
+import Feeds.Gdax.Types.MarketData (GdaxAPIKeys(..),GdaxAuthReq(..))
+import Feeds.Gdax.Types.Private (Account)
 import Control.Exception.Safe (try,IOException)
 
 sandBoxURL :: String
@@ -92,10 +93,10 @@ test fpath = do
         response <- httpLBS request
         case getResponseStatusCode response of
           200 -> do
-            let rspBody = A.decode (getResponseBody response) :: Maybe [GdaxAccountResponse]
+            let rspBody = A.decode (getResponseBody response) :: Maybe [Account]
             print rspBody
           _ -> print "Message was rejected"
-      Left _ -> return ()
+      Left e -> print e
 
 -- TODO: 
 -- get timestamp

@@ -1,3 +1,4 @@
 .stack-work/
 datafeeds.cabal
 *~
+.*swp

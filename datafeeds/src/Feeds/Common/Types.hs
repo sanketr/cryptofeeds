@@ -4,9 +4,7 @@ module Feeds.Common.Types
 (
  Exchange(..),
  CompressedBlob(..),
- GdaxAPIKeys (..),
- Environ(..),
- GdaxAuthReq(..)
+ Environ(..)
 )
 
 where
@@ -31,10 +29,5 @@ instance Store CompressedBlob
 data Exchange = Gdax | Gemini | Bitfinex deriving  (Show,Generic,Typeable)
 instance Store Exchange
 
--- ApiKey - secret, pass, key
-data GdaxAPIKeys = GdaxAPIKeys BS.ByteString BS.ByteString BS.ByteString deriving (Show, Generic,Typeable)
-
 data Environ = Live | Sandbox deriving (Show, Generic,Typeable)
 
--- Gdax Auth Req Method Type (all upper case), URL, Json Body
-data GdaxAuthReq = GdaxAuthReq BS.ByteString BS.ByteString BS.ByteString deriving (Show, Generic,Typeable)

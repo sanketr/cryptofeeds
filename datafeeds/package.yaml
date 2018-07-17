@@ -26,6 +26,7 @@ dependencies:
 - configurator
 - filepath
 - directory
+- hashable
 - hashtables
 - http-client
 - http-conduit
@@ -39,6 +40,7 @@ dependencies:
 - wuss >= 1.1 
 - streaming
 - safe-exceptions
+- scientific
 - async
 - store
 - time
@@ -50,6 +52,7 @@ dependencies:
 - cryptonite
 - memory
 - unix
+- uuid
 
 library:
   source-dirs: src

@@ -8,7 +8,7 @@ import Data.Maybe (fromJust,isJust)
 import Data.Either (isRight,partitionEithers)
 import Data.Text.Read (rational)
 import Data.Text as T (Text,empty,null,take)
-import Feeds.Gdax.Types
+import Feeds.Gdax.Types.MarketData
 import Data.Aeson as A (decode)
 import Data.List (sortOn,sortBy,foldl')
 import Data.Ord(Down(..),comparing)

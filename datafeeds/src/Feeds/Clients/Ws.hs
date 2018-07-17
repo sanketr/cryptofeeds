@@ -23,7 +23,7 @@ import Control.Monad.IO.Class (liftIO,MonadIO)
 import System.Exit (exitSuccess)
 import GHC.IO.Handle.Types (Handle)
 
-import Feeds.Gdax.Types (GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..))
+import Feeds.Gdax.Types.MarketData (GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..))
 import Feeds.Clients.Utils (logWriters,LogType(..),HdlInfo,putLogStr)
 import Feeds.Clients.Internal (toSum)
 
@@ -64,7 +64,7 @@ ws hdlinfo connection = do
   tid <- forkFinally (logDataToFile connection loggers) (either (putMVar dieSignal . show) (\_ -> putMVar dieSignal "Done with processing messages - test mode"))
 
   -- Let us build and send a JSON request for heartbeat to ETH-EUR instrument
-  let req = A.encodeToLazyText Request {_req_type = Subscribe, _req_channels = RequestMsg $ map (\(reqtyp,prdids) -> Channels {_channel_name = reqtyp, _channel_product_ids = prdids}) [(HeartbeatTyp,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"]),(Level2Typ,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"]),(TickerTyp,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"])]}
+  let req = A.encodeToLazyText Request { _req_user_id = Nothing, _req_type = Subscribe, _req_channels = RequestMsg $ map (\(reqtyp,prdids) -> Channels {_channel_name = reqtyp, _channel_product_ids = prdids}) [(HeartbeatTyp,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"]),(Level2Typ,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"]),(TickerTyp,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"])]}
   -- Send heartbeat subscription message - this will cause logDataToFile function kicked off above to start 
   -- receiving the data
   _ <- forkFinally (sendTextData connection req) (either (putMVar dieSignal . show) (\_ -> return ()))

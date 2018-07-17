@@ -12,7 +12,7 @@ import Data.Store (Store)
 import qualified Streaming.Prelude as S hiding (print,show)
 import Data.IORef
 import Control.Exception.Safe (bracket)
-import Feeds.Gdax.Types (GdaxRsp)
+import Feeds.Gdax.Types.MarketData (GdaxRsp)
 import Feeds.Common.Types (CompressedBlob(..))
 import System.IO (stdin,stdout,Handle)
 import qualified Data.Aeson as A (encode)
