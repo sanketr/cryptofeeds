@@ -12,9 +12,7 @@ module Feeds.Gdax.Types.MarketData
  Snapshot(..),
  L2Update(..),
  GdaxRsp(..),
- Obook(..),
- GdaxAPIKeys (..),
- GdaxAuthReq(..)
+ Obook(..)
 )
 
 where
@@ -83,8 +81,4 @@ data GdaxRsp = GdRHb Heartbeat | GdRTick Ticker | GdRSnap Snapshot | GdRL2Up L2U
 deriveJSON defaultOptions{omitNothingFields = True, sumEncoding  = UntaggedValue} ''GdaxRsp
 instance Store GdaxRsp
 
--- ApiKey - secret, pass, key
-data GdaxAPIKeys = GdaxAPIKeys BS.ByteString BS.ByteString BS.ByteString deriving (Show, Generic,Typeable)
 
--- Gdax Auth Req Method Type (all upper case), URL, Json Body
-data GdaxAuthReq = GdaxAuthReq BS.ByteString BS.ByteString BS.ByteString deriving (Show, Generic,Typeable)

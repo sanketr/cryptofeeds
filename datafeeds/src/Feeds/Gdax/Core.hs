@@ -1,6 +1,16 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings,DeriveGeneric #-}
 
-module Feeds.Gdax.Orders
+module Feeds.Gdax.Core
+(
+GdaxAPIKeys(..),
+GdaxAuthReq(..),
+liveURL,
+sandboxURL,
+liveWsURL,
+sandboxWsURL,
+signMsg,
+loadCfg
+)
 where
 
 import Network.HTTP.Types.Header(HeaderName(..))
@@ -21,12 +31,32 @@ import Data.Maybe (fromJust,isJust)
 import qualified Data.Configurator.Types as C (Value,Config)
 import qualified Data.Configurator as C (load, Worth(..), lookup)
 import Feeds.Common.Types (Environ(..))
-import Feeds.Gdax.Types.MarketData (GdaxAPIKeys(..),GdaxAuthReq(..))
 import Feeds.Gdax.Types.Private (Account)
 import Control.Exception.Safe (try,IOException)
+import GHC.Generics
+import Data.Typeable
 
-sandBoxURL :: String
-sandBoxURL = "https://api-public.sandbox.pro.coinbase.com"
+
+-- ApiKey - secret, pass, key
+data GdaxAPIKeys = GdaxAPIKeys BS.ByteString BS.ByteString BS.ByteString deriving (Show, Generic,Typeable)
+
+-- Gdax Auth Req Method Type (all upper case), URL, Json Body
+data GdaxAuthReq = GdaxAuthReq BS.ByteString BS.ByteString BS.ByteString deriving (Show, Generic,Typeable)
+
+type Endpoint = String
+
+liveURL :: Endpoint
+liveURL = "https://api.pro.coinbase.com"
+
+sandboxURL :: Endpoint
+sandboxURL = "https://api-public.sandbox.pro.coinbase.com"
+
+liveWsURL :: Endpoint
+liveWsURL = "ws-feed.pro.coinbase.com"
+
+sandboxWsURL :: Endpoint
+sandboxWsURL = "ws-feed-public.sandbox.pro.coinbase.com"
+
 
 accountReqPath :: BS.ByteString
 accountReqPath = "/accounts"
@@ -53,7 +83,7 @@ hcbpassphrase = "CB-ACCESS-PASSPHRASE"
 
 testAccountInfo :: GdaxAPIKeys -> GdaxAuthReq -> IO Request
 testAccountInfo (GdaxAPIKeys secret pass key) (GdaxAuthReq method url body) = do
-          initreq <- parseRequest (BSC.unpack method ++ " " ++ sandBoxURL ++ BSC.unpack url)
+          initreq <- parseRequest (BSC.unpack method ++ " " ++ sandboxURL ++ BSC.unpack url)
           -- TODO - build timestamp and signed message - leave the body blank as GET for account
           time <- BSC.pack . show <$> epochTime 
           let msg = foldl' BS.append BS.empty [time,method,url,body]

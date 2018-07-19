@@ -23,7 +23,7 @@ import           TH.Derive
 {-- Attribution: sourced from github/AndrewRademacher/gdax --}
 
 $($(derive [d|
-    instance Store UUID => Deriving (Store (UUID))
+    instance Deriving (Store (UUID))
     |]))
 
 newtype AccountId = AccountId { unAccountId :: UUID }

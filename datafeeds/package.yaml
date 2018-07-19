@@ -53,6 +53,8 @@ dependencies:
 - memory
 - unix
 - uuid
+- th-utilities
+- unordered-containers
 
 library:
   source-dirs: src
