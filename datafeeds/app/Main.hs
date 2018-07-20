@@ -6,7 +6,8 @@ import Control.Concurrent (threadDelay,forkIO)
 import System.IO
 import Data.Time.Clock.System (systemToUTCTime,getSystemTime)
 import Data.IORef
-import Feeds.Clients.Utils (compressLog,HdlInfo(..),putLogStr)
+import Feeds.Clients.Utils (compressLog,putLogStr)
+import Feeds.Common.Types (HdlInfo(..))
 
 
 main :: IO ()

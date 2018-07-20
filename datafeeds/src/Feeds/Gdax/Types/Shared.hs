@@ -1,10 +1,13 @@
 {-# LANGUAGE DeriveDataTypeable,DeriveGeneric,TemplateHaskell,GeneralizedNewtypeDeriving,OverloadedStrings #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE RecordWildCards      #-}
 
 module Feeds.Gdax.Types.Shared where
 
 import           Data.Aeson
+import           Data.Aeson.TH
 import           Data.Hashable
 import           Data.Int
 import           Data.Monoid
@@ -12,19 +15,43 @@ import           Data.Scientific
 import           Data.String
 import           Data.Text       (Text)
 import qualified Data.Text       as T
+import qualified Data.Text.Encoding as T (decodeUtf8)
 import           Data.Typeable
 import           Data.UUID
 import           GHC.Generics
 import           Text.Read       (readMaybe)
-import           Data.Store
+import           Data.Store      (Store)
 import           TH.Derive
+import           Data.ByteString as BS(ByteString)
 
 
 {-- Attribution: sourced from github/AndrewRademacher/gdax --}
 
-$($(derive [d|
-    instance Deriving (Store (UUID))
-    |]))
+$($(derive [d| instance Deriving (Store (UUID)) |])) -- Template haskell derivation of Store instance for UUID
+
+newtype TextDouble = TextDouble { unDouble :: Double } -- Need this for GDAX data that encodes double in text
+    deriving (Eq, Ord, Enum, Typeable, Generic, Hashable)
+instance Store TextDouble
+
+instance IsString TextDouble where
+    fromString s = case readMaybe s of
+                    Just v -> TextDouble v
+                    Nothing -> error "Text string is not a double"
+
+instance Show TextDouble where
+    show = show . unDouble
+
+instance FromJSON TextDouble where
+    parseJSON (String s) = case readMaybe $ T.unpack s of
+                            Just v -> pure $ TextDouble v
+                            Nothing -> fail "Text could not be read as double."
+    parseJSON (Number n) = case toBoundedRealFloat n of
+                            Left _ -> fail "Text could not be converted into double."
+                            Right v -> pure $ TextDouble v
+    parseJSON _ = fail "TextDouble can only accept a number or string."
+
+instance ToJSON TextDouble where
+   toJSON = String . T.pack . show
 
 newtype AccountId = AccountId { unAccountId :: UUID }
     deriving (Eq, Ord, Typeable, Generic, ToJSON, FromJSON, Hashable)
@@ -48,12 +75,19 @@ instance Show ProfileId where
     show = show . unProfileId
 
 newtype OrderId = OrderId { unOrderId :: UUID }
-    deriving (Eq, Ord, Typeable, Generic, ToJSON, FromJSON, Hashable)
+    deriving (Eq, Ord,Typeable, Generic, ToJSON, FromJSON, Hashable)
 instance Store OrderId
 
 instance Show OrderId where
     show = show . unOrderId
 
+data Auth = Auth
+  { authSignature  :: BS.ByteString
+  , authKey        :: BS.ByteString
+  , authPassphrase :: BS.ByteString
+  , authTimestamp  :: BS.ByteString
+  } deriving (Show, Typeable, Generic)
+instance Store Auth
 
 data OrderType
     = OrderLimit
@@ -72,6 +106,9 @@ instance FromJSON OrderType where
             "limit"  -> pure OrderLimit
             "market" -> pure OrderMarket
             _ -> fail $ T.unpack $ "'" <> t <> "' is not a valid order type."
+
+instance ToJSON OrderType where
+  toJSON = String . T.pack . show
 
 newtype StopType = StopType { unStopType :: Text }
     deriving (Eq, Ord, Typeable, Generic, ToJSON, FromJSON, IsString, Hashable)
@@ -109,6 +146,9 @@ instance FromJSON TradeId where
                             Nothing -> fail "TradeId scientific could not be converted into an integer."
                             Just v -> pure $ TradeId v
     parseJSON _ = fail "TradeId can only accept a number or string."
+
+instance ToJSON TradeId where
+   toJSON = toJSON . unTradeId
 
 data Side
     = Buy
@@ -165,6 +205,9 @@ instance FromJSON EntryType where
             "fee"      -> pure EntryFee
             "transfer" -> pure EntryTransfer
             _ -> fail $ T.unpack $ "'" <> t <> "' is not a valid entry type."
+
+instance ToJSON EntryType where
+    toJSON = String . T.pack . show
 
 newtype TransferId = TransferId { unTransferId :: UUID }
     deriving (Eq, Ord, Typeable, Generic, ToJSON, FromJSON, Hashable)

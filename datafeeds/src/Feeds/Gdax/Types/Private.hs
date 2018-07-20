@@ -9,6 +9,7 @@
 module Feeds.Gdax.Types.Private where
 
 import           Data.Aeson
+import           Data.Aeson.TH 
 import           Data.HashMap.Strict       (HashMap)
 import           Data.Int
 import           Data.Monoid
@@ -20,8 +21,9 @@ import           GHC.Generics
 import           Feeds.Common.Parsers
 import           Feeds.Gdax.Types.Shared
 import           Text.Read                 (readMaybe)
-import           Data.Char (isSpace)
+import           Data.Char (isSpace,toLower)
 import           Data.Store
+import           Data.ByteString           as BS (ByteString)
 
 
 data Account
@@ -29,9 +31,9 @@ data Account
         { _accountId        :: AccountId
         , _accountProfileId :: ProfileId
         , _accountCurrency  :: CurrencyId
-        , _accountBalance   :: Double
-        , _accountAvailable :: Double
-        , _accountHold      :: Double
+        , _accountBalance   :: TextDouble
+        , _accountAvailable :: TextDouble
+        , _accountHold      :: TextDouble
         , _accountMargin    :: Maybe MarginAccount
         }
     deriving (Show, Typeable, Generic)
@@ -39,8 +41,8 @@ instance Store Account
 
 data MarginAccount
     = MarginAccount
-        { _maccountFundedAmount  :: Double
-        , _maccountDefaultAmount :: Double
+        { _maccountFundedAmount  :: TextDouble
+        , _maccountDefaultAmount :: TextDouble
         }
     deriving (Show, Typeable, Generic)
 instance Store MarginAccount
@@ -50,35 +52,15 @@ instance FromJSON Account where
         <$> o .: "id"
         <*> o .: "profile_id"
         <*> o .: "currency"
-        <*> (o .: "balance" >>= textRead)
-        <*> (o .: "available" >>= textRead)
-        <*> (o .: "hold" >>= textRead)
+        <*> o .: "balance" 
+        <*> o .: "available"
+        <*> o .: "hold"
         <*> do enabled <- o .:? "margin_enabled"
                if enabled == (Just True)
                 then (\a b -> Just $ MarginAccount a b)
-                        <$> (o .: "funded_amount" >>= textRead)
-                        <*> (o .: "default_amount" >>= textRead)
+                        <$> (o .: "funded_amount")
+                        <*> (o .: "default_amount")
                 else return Nothing
-
-data Entry
-    = Entry
-        { _entryId        :: EntryId
-        , _entryType      :: EntryType
-        , _entryCreatedAt :: UTCTime
-        , _entryAmount    :: Double
-        , _entryBalance   :: Double
-        , _entryDetails   :: EntryDetails
-        }
-    deriving (Show, Typeable, Generic)
-
-instance FromJSON Entry where
-    parseJSON = withObject "Entry" $ \o -> Entry
-        <$> o .: "id"
-        <*> o .: "type"
-        <*> o .: "created_at"
-        <*> (o .: "amount" >>= textRead)
-        <*> (o .: "balance" >>= textRead)
-        <*> o .: "details"
 
 data EntryDetails
     = EntryDetails
@@ -87,12 +69,19 @@ data EntryDetails
         , _edetailsProductId :: Maybe ProductId
         }
     deriving (Show, Typeable, Generic)
+deriveJSON defaultOptions{fieldLabelModifier = camelTo2 '_' . Prelude.drop 9,omitNothingFields = True} ''EntryDetails
 
-instance FromJSON EntryDetails where
-    parseJSON = withObject "EntryDetails" $ \o -> EntryDetails
-        <$> o .:? "order_id"
-        <*> o .:? "trade_id"
-        <*> o .:? "product_id"
+data Entry
+    = Entry
+        { _entryId        :: EntryId
+        , _entryType      :: EntryType
+        , _entryCreatedAt :: UTCTime
+        , _entryAmount    :: TextDouble
+        , _entryBalance   :: TextDouble
+        , _entryDetails   :: EntryDetails
+        }
+    deriving (Show, Typeable, Generic)
+deriveJSON defaultOptions{fieldLabelModifier = camelTo2 '_' . Prelude.drop 6,omitNothingFields = True} ''Entry
 
 data Hold
     = Hold
@@ -100,7 +89,7 @@ data Hold
         , _holdAccountId :: AccountId
         , _holdCreatedAt :: UTCTime
         , _holdUpdatedAt :: UTCTime
-        , _holdAmount    :: Double
+        , _holdAmount    :: TextDouble
         , _holdReference :: HoldReference
         }
     deriving (Show, Typeable, Generic)
@@ -137,15 +126,15 @@ instance ToJSON NewOrder where
     toJSON (NewOrderMarket o) = toJSON o
     toJSON (NewOrderStop o)   = toJSON o
 
+
 data NewLimitOrder
     = NewLimitOrder
         { _nloClientOrderId       :: Maybe ClientOrderId
         , _nloSide                :: Side
         , _nloProductId           :: ProductId
         , _nloSelfTradePrevention :: SelfTradePolicy
-
-        , _nloPrice               :: Double
-        , _nloSize                :: Double
+        , _nloPrice               :: TextDouble
+        , _nloSize                :: TextDouble
         , _nloTimeInForce         :: Maybe TimeInForce
         , _nloCancelAfter         :: Maybe CancelAfterPolicy
         , _nloPostOnly            :: Maybe Bool
@@ -153,18 +142,19 @@ data NewLimitOrder
     deriving (Show, Typeable, Generic)
 
 instance ToJSON NewLimitOrder where
-    toJSON NewLimitOrder{..} = object
-        [ "client_oid" .= _nloClientOrderId
-        , "type" .= ("limit"::Text)
+    toJSON NewLimitOrder{..} = object .
+        filter (\(_,x) -> Null /= x)
+        $ [maybe ("",Null) (\x -> ("client_oid" .= x))  _nloClientOrderId
+        ,"type" .= ("limit"::Text)
         , "side" .= _nloSide
         , "product_id" .= _nloProductId
         , "stp" .= _nloSelfTradePrevention
         , "price" .= _nloPrice
         , "size" .= _nloSize
-        , "time_in_force" .= _nloTimeInForce
-        , "cancel_after" .= _nloCancelAfter
-        , "post_only" .= _nloPostOnly
-        ]
+        ,maybe ("",Null) (\x -> "time_in_force" .=  x) _nloTimeInForce
+        ,maybe ("",Null) (\x -> "cancel_after" .= x) _nloCancelAfter
+        -- by default, request will be to post in the order book (i.e., no market order) unless explicitly overridden
+        ,maybe ("post_only",Bool True) (\x ->"post_only" .= x) _nloPostOnly]
 
 data NewMarketOrder
     = NewMarketOrder
@@ -194,8 +184,7 @@ data NewStopOrder
         , _nsoSide                :: Side
         , _nsoProductId           :: ProductId
         , _nsoSelfTradePrevention :: SelfTradePolicy
-
-        , _nsoPrice               :: Double
+        , _nsoPrice               :: TextDouble
         , _nsoMarketDesire        :: MarketDesire
         }
     deriving (Show, Typeable, Generic)
@@ -213,8 +202,8 @@ instance ToJSON NewStopOrder where
                 (DesireFunds f) -> [ "funds" .= f ]
 
 data MarketDesire
-    = DesireSize Double -- ^ Desired amount in commodity (e.g. BTC)
-    | DesireFunds Double -- ^ Desired amount in quote currency (e.g. USD)
+    = DesireSize TextDouble -- ^ Desired amount in commodity (e.g. BTC)
+    | DesireFunds TextDouble -- ^ Desired amount in quote currency (e.g. USD)
     deriving (Show, Typeable, Generic)
 
 data TimeInForce
@@ -309,65 +298,37 @@ instance FromJSON NewOrderConfirmation where
 data Order
     = Order
         { _orderId                  :: OrderId
-        , _orderPrice               :: Double
-        , _orderSize                :: Double
+        , _orderPrice               :: TextDouble
+        , _orderSize                :: TextDouble
         , _orderProductId           :: ProductId
         , _orderSide                :: Side
-        , _orderSelfTradePrevention :: SelfTradePolicy
+        , _orderStp                 :: SelfTradePolicy
         , _orderType                :: OrderType
         , _orderTimeInForce         :: TimeInForce
         , _orderPostOnly            :: Bool
         , _orderCreatedAt           :: UTCTime
-        , _orderFillFees            :: Double
-        , _orderFilledSize          :: Double
-        , _orderExecutedValue       :: Double
+        , _orderFillFees            :: TextDouble
+        , _orderFilledSize          :: TextDouble
+        , _orderExecutedValue       :: TextDouble
         , _orderStatus              :: OrderStatus
         , _orderSettled             :: Bool
         }
     deriving (Show, Typeable, Generic)
+deriveJSON defaultOptions{fieldLabelModifier = camelTo2 '_' . Prelude.drop 6,omitNothingFields = True} ''Order
 
-instance FromJSON Order where
-    parseJSON = withObject "Order" $ \o -> Order
-        <$> o .: "id"
-        <*> o .: "price"
-        <*> o .: "size"
-        <*> o .: "product_id"
-        <*> o .: "side"
-        <*> o .: "stp"
-        <*> o .: "type"
-        <*> o .: "time_in_force"
-        <*> o .: "post_only"
-        <*> o .: "created_at"
-        <*> o .: "fill_fees"
-        <*> o .: "filled_size"
-        <*> o .: "executed_value"
-        <*> o .: "status"
-        <*> o .: "settled"
 
 data Fill
     = Fill
         { _fillTradeId   :: TradeId
         , _fillProductId :: ProductId
-        , _fillPrice     :: Double
-        , _fillSize      :: Double
+        , _fillPrice     :: TextDouble
+        , _fillSize      :: TextDouble
         , _fillOrderId   :: OrderId
         , _fillCreatedAt :: UTCTime
         , _fillLiquidity :: Liquidity
-        , _fillFee       :: Double
+        , _fillFee       :: TextDouble
         , _fillSettled   :: Bool
         , _fillSide      :: Side
         }
     deriving (Show, Typeable, Generic)
-
-instance FromJSON Fill where
-    parseJSON = withObject "Fill" $ \o -> Fill
-        <$> o .: "trade_id"
-        <*> o .: "product_id"
-        <*> o .: "price"
-        <*> o .: "size"
-        <*> o .: "order_id"
-        <*> o .: "created_at"
-        <*> o .: "liquidity"
-        <*> o .: "fee"
-        <*> o .: "settled"
-        <*> o .: "side"
+deriveJSON defaultOptions{fieldLabelModifier = camelTo2 '_' . Prelude.drop 5,omitNothingFields = True} ''Fill

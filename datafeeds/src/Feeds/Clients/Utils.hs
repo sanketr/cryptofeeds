@@ -3,10 +3,8 @@ module Feeds.Clients.Utils
 (
  logWriters,
  logWritersTest,
- LogType(..),
  compressLog,
  genSignature,
- HdlInfo(..),
  putLogStr
 )
 where
@@ -18,14 +16,15 @@ import Control.Exception.Safe (bracketOnError,bracket)
 import System.Directory (createDirectoryIfMissing,doesFileExist,removeFile)
 import System.FilePath (takeDirectory,(</>),(<.>))
 import System.IO (openBinaryFile,IOMode(..),hSetBuffering, BufferMode(..),hClose)
+import Control.Exception(Exception,throw)
 import GHC.IO.Handle.Types (Handle(..))
 import Data.Time (formatTime,defaultTimeLocale,toModifiedJulianDay,utctDay)
 import Data.Time.Clock.System (systemToUTCTime,getSystemTime)
 import Data.List (foldl')
 import Data.Char (toLower)
 import qualified Data.ByteString as BS (ByteString,hPut)
-import Control.Exception(Exception,throw)
 import Feeds.Clients.Internal (compressLogZstd)
+import Feeds.Common.Types (HdlInfo(..),LogState(..),LogType(..),NoLogFileException(..))
 import Data.ByteArray.Encoding (convertToBase, convertFromBase, Base (Base64))
 import Crypto.Hash (HashAlgorithm, Digest)
 import Crypto.MAC.HMAC (hmac, hmacGetDigest)
@@ -108,19 +107,6 @@ getDate  = do
       dayint = toModifiedJulianDay . utctDay $ t -- day today with day of 1858-11-17 as 0.
   return (dayint,datestr)
 
--- State to keep - date, current file number, flag to indicate initialization
-data LogState = LogState {logdt:: Integer, logctr:: Int, logstart :: Bool } deriving (Show)
-data LogType = Normal | Error deriving (Show)
-
-data HdlInfo = HdlInfo {hdl :: Handle, fpath :: FilePath} deriving (Show)
-
-data NoLogFileException = NormalLogException String | ErrorLogException String
-
-instance Show NoLogFileException where
-  show (NormalLogException e) = "NormalLogException: There was an issue when accessing normal log file. " ++ e
-  show (ErrorLogException e) = "ErrorLogException: There was an issue when accessing normal log file. " ++ e
-
-instance Exception NoLogFileException
 
 -- We will execute this one in a separate thread and continously monitor for date change
 logSwitcher :: Int -> (FilePath,FilePath) -> IORef (Maybe HdlInfo,Maybe HdlInfo) -> LogState -> MVar (Maybe HdlInfo,Maybe HdlInfo) -> IO ()

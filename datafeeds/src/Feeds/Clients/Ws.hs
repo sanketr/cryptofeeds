@@ -24,7 +24,8 @@ import System.Exit (exitSuccess)
 import GHC.IO.Handle.Types (Handle)
 
 import Feeds.Gdax.Types.MarketData (GdaxRsp,RspTyp(..),ReqTyp(..),Request(..),RequestMsg(..),Channels(..))
-import Feeds.Clients.Utils (logWriters,LogType(..),HdlInfo,putLogStr)
+import Feeds.Common.Types (LogType(..),HdlInfo)
+import Feeds.Clients.Utils (logWriters,putLogStr)
 import Feeds.Clients.Internal (toSum)
 
 -- This is a websocket client to connect to GDAX websocket feed
@@ -80,3 +81,45 @@ ws hdlinfo connection = do
   sendClose connection (pack "Bye!")
   putLogStr dieMsg -- To do - log to error log
   exitSuccess
+
+
+{-- Authentication over web socket
+
+ toJSON (Subscribe auth pids) =
+    object
+      [ "type" .= ("subscribe" :: Text)
+      , "product_ids" .= pids
+      , "signature" .= authSignature auth
+      , "key" .= authKey auth
+      , "passphrase" .= authPassphrase auth
+      , "timestamp" .= authTimestamp auth
+      ]
+
+  data Auth = Auth
+  { authSignature  :: Text
+  , authKey        :: Text
+  , authPassphrase :: Text
+  , authTimestamp  :: Text
+  } deriving (Eq, Show, Read, Data, Typeable, Generic, NFData)
+
+mkAuth :: ExchangeConf -> IO Auth
+mkAuth conf = do
+    let meth = "GET"
+        p = "/users/self"
+    case authToken conf of
+        Just tok -> do
+            time <-
+                liftM (realToFrac . utcTimeToPOSIXSeconds) (liftIO getCurrentTime) >>= \t ->
+                    return . CBS.pack $ printf "%.0f" (t :: Double)
+            let presign = CBS.concat [time, meth, CBS.pack p]
+                sign = Base64.encode $ toBytes (hmac (secret tok) presign :: HMAC SHA256)
+            return
+                Auth
+                { authSignature = T.decodeUtf8 sign
+                , authKey = T.decodeUtf8 $ key tok
+                , authPassphrase = T.decodeUtf8 $ passphrase tok
+                , authTimestamp = T.decodeUtf8 time
+                }
+        Nothing -> throw $ AuthenticationRequiredFailure $ T.pack p
+
+--}
