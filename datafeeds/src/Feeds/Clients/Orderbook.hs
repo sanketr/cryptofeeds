@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 module Feeds.Clients.Orderbook
 
 where
@@ -6,18 +5,22 @@ where
 import Data.ByteString.Lazy as BL hiding (foldl')
 import Data.Maybe (fromJust,isJust)
 import Data.Either (isRight,partitionEithers)
-import Data.Text.Read (rational)
 import Data.Text as T (Text,empty,null,take)
-import Feeds.Gdax.Types.MarketData
+--import Feeds.Gdax.Types.MarketData
+import Feeds.Gdax.Types.Feed (GdaxMessage(..),Obook(..),Snapshot(..),L2Update(..),Ticker(..),Level2Item(..),Level2Change(..))
+import Feeds.Gdax.Types.Shared (ProductId,Sequence(..),Side(..))
 import Data.Aeson as A (decode)
 import Data.List (sortOn,sortBy,foldl')
 import Data.Ord(Down(..),comparing)
 import qualified Data.HashTable.IO as H
 import qualified Data.Map.Strict as Map 
+import qualified Data.Vector as V (fromList,toList,map)
 import Criterion.Main
 import Streaming.Prelude as S (mapMaybeM)
 import Streaming as S (Stream,Of,lift)
 import Control.Monad.IO.Class (liftIO)
+import Data.Time (UTCTime(..),Day(..))
+import Data.Int (Int64)
 
 type HashTable k v = H.LinearHashTable k v
 
@@ -38,21 +41,26 @@ updMapBid = updMap Map.toDescList
 
 -- | Orderbook snapshot for a ticker: Time (Text), Seq (Int), bidMap, askMap - it is referenced by ticker 
 -- in a parent hashtable - we use this to keep track of orderbook changes for any ticker
-data OData = OData !T.Text !Int !(Map.Map Float Float) !(Map.Map Float Float) deriving Show
+data OData = OData !UTCTime !Int64 !(Map.Map Double Double) !(Map.Map Double Double) deriving Show
 
 -- Function to determine if the current time has same date as previous time - if not equal, True
 -- else False. This is used to reset orderbook sequence number
 -- Time from GDAX is like this in UTC: "2018-04-26T09:53:27.357000Z"
-resetSeq :: T.Text -> T.Text -> Int -> Int
-resetSeq ptime ntime pseq = case (T.null ptime || (T.take 10 ptime) == (T.take 10 ntime)) of
+resetSeq :: UTCTime -> UTCTime -> Int64 -> Int64
   -- retain the sequence as long as previous time is empty or current date = previous date. Don't want to reset on first update after snapshot when new time is not empty but previous time is empty
-  True -> pseq 
-  False -> 0
+resetSeq ptime ntime pseq = if ptime == missingTime || utctDay ptime == utctDay ntime then pseq else 0
 
 -- Function to get orderbook given size bounds on order book, ticker name, and book data
-getOBook :: Int -> T.Text -> OData -> Obook
-getOBook sz ticker (OData ctm cseq cbmap camap) =  Obook { _obook_timestamp = ctm, _obook_ticker = ticker, _obook_seqnum = cseq , _obook_bids = Prelude.take sz . Map.toDescList $ cbmap, _obook_asks = Prelude.take sz . Map.toAscList $ camap } 
+getOBook :: Int -> ProductId -> OData -> Obook
+getOBook sz ticker (OData ctm cseq cbmap camap) =  Obook { _obook_timestamp = ctm, _obook_ticker = ticker, _obook_seqnum = Sequence cseq , _obook_bids = Prelude.take sz . Map.toDescList $ cbmap, _obook_asks = Prelude.take sz . Map.toAscList $ camap } 
 
+-- We use 2000.01.01 as the missing time in order book - borrowed from kdb convention of 2000.01.01 as stand-in for 0 date in trading
+missingTime :: UTCTime
+missingTime = UTCTime (ModifiedJulianDay 51544) 0
+
+isSell :: Side -> Bool
+isSell Sell = True
+isSell Buy = False
 -- | Order book generation |
 -- Initialization: snapshot must exist before l2update when starting. TODO: Error out if no snapshot, and ask for snapshot log - provide hint it is normally a log that starts with 1
 -- 1. Update snapshot map with l2update. 
@@ -60,13 +68,13 @@ getOBook sz ticker (OData ctm cseq cbmap camap) =  Obook { _obook_timestamp = ct
 -- 3. Seq num lets us keep track of order book evolution given same time
 -- 4. Reset seq num on date roll over
 -- Return Obook on snap or l2 update
-updateHTbl :: HashTable T.Text OData -> Int -> GdaxRsp -> IO (Maybe Obook)
-updateHTbl ht sz inp = do
+updateHTbl :: HashTable ProductId OData -> Int -> GdaxMessage -> IO (Maybe Obook)
+updateHTbl ht sz inp = 
   case inp of
     -- Trades - Update time in OData if OData exists
-    GdRTick tick -> do
-          let ticker = _tick_product_id tick
-              tradeTime = _tick_time tick
+    GdaxTicker tick -> do
+          let ticker = _tickerProductId tick
+              tradeTime = _tickerTime tick
           -- in case a ticker has stats-only update, it is not a trade, and time will be missing. Update only on trade
           maybe (return Nothing)
             (\ntm -> do
@@ -79,23 +87,23 @@ updateHTbl ht sz inp = do
             tradeTime
 
     -- Snapshot - Update time to Empty in OData, update maps, output new obook
-    GdRSnap snap -> do
-          let ticker = _snp_product_id snap
+    GdaxSnapshot snap -> do
+          let ticker = _l2snapProductId snap
               -- GDAX level 2 is of depth 50
-              bidMap = Map.fromList . getBids 50 . _snp_bids $ snap
-              askMap = Map.fromList . getAsks 50 . _snp_asks $ snap
+              bidMap = Map.fromList . getBids 50 . V.toList . V.map (\x -> (_l2itemPrice x,_l2itemSize x)) . _l2snapBids $ snap
+              askMap = Map.fromList . getAsks 50 . V.toList . V.map (\x -> (_l2itemPrice x,_l2itemSize x)) . _l2snapAsks $ snap
           odata <- H.lookup ht ticker
           -- if OData exists, only keep seq information
-          let nodata = maybe (OData "" 0 bidMap askMap) (\(OData _ oseq _ _) -> OData "" (1 + oseq) bidMap askMap) odata
+          let nodata = maybe (OData missingTime 0 bidMap askMap) (\(OData _ oseq _ _) -> OData missingTime (1 + oseq) bidMap askMap) odata
               nobook = getOBook sz ticker nodata -- get new order book
           H.insert ht ticker nodata
           -- output order book
-          (return . Just $ nobook)
+          return . Just $ nobook
 
     -- L2 updates - Update seq, askmap, bidmap in OData, output new obook
-    GdRL2Up upd -> do
-          let ticker = _l2upd_product_id upd
-              (updasks,updbids) = (\(x,y) -> (getNumPairs x,getNumPairs y)) $ foldl' (\(alist,blist) (x,y,z) -> if x == "sell" then (((y,z)):alist,blist) else if x == "buy" then (alist, ((y,z)): blist) else (alist,blist)) ([],[]) $ _l2upd_changes $ upd
+    GdaxL2Update upd -> do
+          let ticker = _l2updateProductId upd
+              (updasks,updbids) = foldl' (\(alist,blist) (x,y,z) -> if isSell x then ((y,z):alist,blist) else (alist, (y,z): blist)) ([],[]) $ V.toList . V.map (\x -> (_l2bidSide x,_l2bidPrice x,_l2bidSize x)) . _l2updateChanges $ upd
           -- get current OData
           --  - do nothing if OData doesn't exist which is not a valid state btw - snapshots must always precede l2 updates
           --  - if OData exists, update seq, maps, output new obook if changed
@@ -118,29 +126,26 @@ updateHTbl ht sz inp = do
 
     _         -> return Nothing
 
-updObookH :: HashTable T.Text OData -> Int -> Stream (Of GdaxRsp) IO () -> Stream (Of Obook) IO ()
-updObookH ht sz inpstr = S.mapMaybeM (updateHTbl ht sz) inpstr
+updObookH :: HashTable ProductId OData -> Int -> Stream (Of GdaxMessage) IO () -> Stream (Of Obook) IO ()
+updObookH ht sz = S.mapMaybeM (updateHTbl ht sz)
              
 -- | Function to take Gdax data and generate Order book data. sz arg sets order book depth 
-updObook :: Int -> Stream (Of GdaxRsp) IO () -> Stream (Of Obook) IO ()
+updObook :: Int -> Stream (Of GdaxMessage) IO () -> Stream (Of Obook) IO ()
 updObook sz inpstr = do
   ht <-  lift H.new
   updObookH ht sz inpstr
 
--- Function to parse pair of floats from text, and filter only the values that are valid
-getNumPairs :: [(T.Text,T.Text)] -> [(Float,Float)]
-getNumPairs = Prelude.map (\(Right x,Right y) -> (fst x,fst y)) . Prelude.filter (\x -> (isRight . fst $ x) && (isRight . snd $ x)) . Prelude.map (\(x,y) -> (rational x,rational y))
-
-getSides :: ((Float,Float) -> (Float,Float) ->  Ordering) -> Int ->  [(T.Text,T.Text)] -> [(Float,Float)]
-getSides sortFn cnt = Prelude.take cnt . sortBy sortFn .  getNumPairs 
+getSides :: ((Double,Double) -> (Double,Double) ->  Ordering) -> Int ->  [(Double,Double)] -> [(Double,Double)]
+getSides sortFn cnt = Prelude.take cnt . sortBy sortFn
 {-# INLINE getSides #-}
 
-getBids ::  Int ->  [(T.Text,T.Text)] -> [(Float,Float)]
+getBids ::  Int ->  [(Double,Double)] -> [(Double,Double)]
 getBids = getSides  (comparing (Down . fst))
 
-getAsks ::  Int ->  [(T.Text,T.Text)] -> [(Float,Float)]
+getAsks ::  Int ->  [(Double,Double)] -> [(Double,Double)]
 getAsks = getSides  (comparing fst)
 
+{--
 main = do
   json <- BL.readFile "../../testdata/snapshot.json"
   updjson <- BL.readFile "../../testdata/l2update.json"
@@ -162,4 +167,5 @@ main = do
   print $ Map.toAscList $ updMapAsk 5 askMap updasks
   print $ Map.toDescList $ updMapBid 5 bidMap updbids
   return ()
+--}
   

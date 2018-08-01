@@ -35,7 +35,7 @@ import Feeds.Common.Types (Environ(..))
 import Feeds.Gdax.Types.Private
 import Feeds.Gdax.Types.Shared
 import Feeds.Common.Types (ExchCfg(..),RestMethod(..),Endpoint)
-import qualified Feeds.Gdax.Types.Feed as F (Request(..))
+import qualified Feeds.Gdax.Types.Feed as F (Request(..),ReqTyp(..),ChannelSubscription(..),Channel(..))
 import Control.Exception.Safe (try,IOException,MonadThrow,throwM)
 import Feeds.Gdax.Exceptions
 import GHC.Generics
@@ -90,7 +90,7 @@ genAuthMsg (ExchCfg _ _ secret pass key) (GdaxAuthReq method relurl body) = do
 
 genWsAuthMsg :: ExchCfg -> F.Request -> IO LBS.ByteString
 genWsAuthMsg cfg req = do
-          auth <- genAuthMsg cfg (GdaxAuthReq GET "/users/self" BS.empty) -- From Gdax documentation for websocket request authentication - sign GET request to "/users/self" with no body
+          auth <- genAuthMsg cfg (GdaxAuthReq GET "/users/self/verify" BS.empty) -- From Gdax documentation for websocket request authentication - sign GET request to "/users/self" with no body
           -- Add authentication to request and create JSON bytes - this will be sent to websocket for authenticated request
           return . A.encode $ req { F._reqAuth = Just auth}
 

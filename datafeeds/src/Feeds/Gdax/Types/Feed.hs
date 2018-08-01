@@ -23,6 +23,7 @@ import           Feeds.Common.Parsers
 import           Feeds.Gdax.Types.Shared
 import           Data.Store                (Store)
 import           Data.Maybe                (isJust,fromJust)
+import           Data.Int                  
 
 data Channel
     = ChannelHeartbeat
@@ -215,7 +216,7 @@ data Level2Item
         { _l2itemPrice :: {-# UNPACK #-} !Double
         , _l2itemSize  :: {-# UNPACK #-} !Double
         }
-    deriving (Show, Typeable, Generic)
+    deriving (Show, Eq, Typeable, Generic)
 instance Store Level2Item
 
 instance FromJSON Level2Item where

@@ -5,18 +5,18 @@ where
 import qualified Data.ByteString.Streaming as SBS (fromHandle,toHandle,fromChunks,toChunks)
 import qualified Data.ByteString.Internal as BS (ByteString(..))
 import qualified Data.ByteString as BS (empty)
-import qualified Data.ByteString.Lazy as LBS (toStrict,fromStrict,append)
+import qualified Data.ByteString.Lazy as LBS (ByteString,toStrict,fromStrict,append)
 import Streaming as S
 import System.IO.ByteBuffer as BB (new,free,ByteBuffer) 
 import Data.Store (Store)
 import qualified Streaming.Prelude as S hiding (print,show)
 import Data.IORef
 import Control.Exception.Safe (bracket)
-import Feeds.Gdax.Types.MarketData (GdaxRsp)
 import Feeds.Common.Types (CompressedBlob(..))
+import Feeds.Gdax.Types.MarketData (GdaxRsp)
 import System.IO (stdin,stdout,Handle)
-import qualified Data.Aeson as A (encode)
-
+import qualified Data.Aeson as A (decode,encode)
+import qualified Feeds.Gdax.Types.Feed as F (GdaxMessage)
 import Data.Store.Streaming as B
 import Codec.Compression.Zlib as Zl (compress,decompress)
 import qualified Codec.Compression.Zstd.Streaming as Z
@@ -49,16 +49,16 @@ decompressLogZstd inhdl outhdl = SBS.toHandle outhdl . SBS.fromChunks . decompre
 
 
 toSum :: Monad m 
-      => Stream (Of (Either BS.ByteString BS.ByteString)) m r 
-      -> Stream (Sum (Of BS.ByteString) (Of BS.ByteString)) m r
+      => Stream (Of (Either a b)) m r 
+      -> Stream (Sum (Of a) (Of b)) m r
 toSum = maps $ \(eitherBytes :> x) -> 
     case eitherBytes of
         Left bytes -> InL (bytes :> x)
         Right bytes -> InR (bytes :> x)
 
 fromSum :: Monad m 
-        => Stream (Sum (Of BS.ByteString) (Of BS.ByteString)) m r 
-        -> Stream (Of (Either BS.ByteString BS.ByteString)) m r
+        => Stream (Sum (Of a) (Of b)) m r 
+        -> Stream (Of (Either a b)) m r
 fromSum = maps $ \eitherBytes ->
     case eitherBytes of
         InL (bytes :> x) -> Left bytes :> x
@@ -93,8 +93,8 @@ streamDecodeCompressed :: (ByteBuffer,ByteBuffer) -> Stream (Of BS.ByteString) I
 streamDecodeCompressed (bb1,bb2) = streamDecode bb1 . S.map decompressMessage . streamDecode bb2 
 
 -- Function to decode binary encoded log - assumes it is uncompressed - reads input from stdin
-decodeGdaxLogH :: ByteBuffer -> Stream (Of GdaxRsp) IO ()
-decodeGdaxLogH bb = streamDecode bb . SBS.toChunks . SBS.fromHandle $ stdin
+decodeGdaxLogHv1 :: ByteBuffer -> Stream (Of GdaxRsp) IO ()
+decodeGdaxLogHv1 bb = streamDecode bb . SBS.toChunks . SBS.fromHandle $ stdin
 
 -- TODO: Add a state machine for order book and trades
 -- State machine: 
@@ -109,7 +109,13 @@ decodeGdaxLog = bracket
                   (BB.new Nothing)
                   BB.free
                   -- Convert to JSON format, add new line and redirect output to stdout
-                  (SBS.toHandle stdout . SBS.fromChunks  . S.map (LBS.toStrict . LBS.append "\n" . A.encode) . decodeGdaxLogH)
+                  (SBS.toHandle stdout . SBS.fromChunks  . S.map (LBS.toStrict . LBS.append "\n" . A.encode) . decodeGdaxLogHv1)
+
+migrateGdaxLog :: IO ()
+migrateGdaxLog = bracket
+                  (BB.new Nothing)
+                  BB.free
+                  (SBS.toHandle stdout . SBS.fromChunks  . S.map (B.encodeMessage . B.Message . (A.decode:: LBS.ByteString -> Maybe F.GdaxMessage) . A.encode) . decodeGdaxLogHv1)
 
 decodeGdaxCompressedLog :: IO ()
 decodeGdaxCompressedLog = bracket

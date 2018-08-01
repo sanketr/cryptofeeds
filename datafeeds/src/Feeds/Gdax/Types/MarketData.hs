@@ -12,7 +12,8 @@ module Feeds.Gdax.Types.MarketData
  Snapshot(..),
  L2Update(..),
  GdaxRsp(..),
- Obook(..)
+ Obook(..),
+ CompressedBlob(..)
 )
 
 where
@@ -25,7 +26,6 @@ import Data.Text as T (Text)
 import Data.Char (toLower)
 import Data.Int (Int64)
 import Data.ByteString as BS (ByteString)
-import Feeds.Common.Parsers
 
 data ReqTyp = Subscribe | Unsubscribe deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''ReqTyp
@@ -44,11 +44,11 @@ data RequestMsg = RequestMsg [Channels] deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''RequestMsg
 instance Store RequestMsg
 
-data Request = Request { _req_user_id :: Maybe T.Text, _req_type :: ReqTyp, _req_channels :: RequestMsg } deriving (Show, Generic,Typeable)
+data Request = Request { _req_type :: ReqTyp, _req_channels :: RequestMsg } deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 5,constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''Request
 instance Store Request
 
-data Heartbeat = Heartbeat { _hb_user_id :: Maybe T.Text, _hb_type :: RspTyp, _hb_sequence:: Int64, _hb_last_trade_id :: Int64, _hb_product_id :: T.Text, _hb_time :: T.Text } deriving (Show, Generic,Typeable)
+data Heartbeat = Heartbeat { _hb_type :: RspTyp, _hb_sequence:: Int64, _hb_last_trade_id :: Int64, _hb_product_id :: T.Text, _hb_time :: T.Text } deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 4,constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''Heartbeat 
 instance Store Heartbeat
 
@@ -70,15 +70,17 @@ data ObookState = OUpd L2Update | OInit Snapshot deriving (Show, Generic,Typeabl
 data Obook = Obook { _obook_timestamp :: T.Text, _obook_ticker :: T.Text, _obook_seqnum :: Int, _obook_bids :: [(Float,Float)], _obook_asks :: [(Float,Float)] } deriving  (Show, Generic,Typeable)
 deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 7,constructorTagModifier = Prelude.map toLower,omitNothingFields = True} ''Obook
 instance Store Obook
-
--- This equality derivation is useful to determine if orderbook bids/asks have changed, and to publish order book
--- in case of change
+ 
+--- This equality derivation is useful to determine if orderbook bids/asks have changed, and to publish order book in case of change
 instance Eq Obook where
   a == b = (_obook_ticker a == _obook_ticker b) && (_obook_bids a == _obook_bids b) &&(_obook_asks a == _obook_asks b)
-
 
 data GdaxRsp = GdRHb Heartbeat | GdRTick Ticker | GdRSnap Snapshot | GdRL2Up L2Update deriving (Show, Generic,Typeable)
 deriveJSON defaultOptions{omitNothingFields = True, sumEncoding  = UntaggedValue} ''GdaxRsp
 instance Store GdaxRsp
 
-
+-- We use the data structure below to compress data, and use Store library to implement streaming
+-- decompression - that way, we are not at the mercy of compression algorithm for solid streaming
+-- implementation 
+data CompressedBlob = Compressed !BS.ByteString deriving (Show,Generic,Typeable)
+instance Store CompressedBlob

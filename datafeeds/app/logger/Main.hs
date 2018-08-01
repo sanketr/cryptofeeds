@@ -1,7 +1,8 @@
 module Main
 where
 
-import Feeds.Clients.Internal as C (decodeGdaxLog,decodeGdaxCompressedLog)
+import Feeds.Clients.Internal as C (decodeGdaxLog,migrateGdaxLog)
 
 main :: IO ()
-main = decodeGdaxLog
+-- main = decodeGdaxLog
+main = migrateGdaxLog

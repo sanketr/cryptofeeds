@@ -43,6 +43,9 @@ dependencies:
 - scientific
 - async
 - store
+- snap-core
+- snap-server
+- websockets-snap
 - time
 - random
 - mtl
@@ -66,6 +69,7 @@ executables:
     source-dirs:         app/logger
     ghc-options:
     - -threaded
+    - -Wall
     - -O2
     - -rtsopts
     - -with-rtsopts=-N
@@ -77,6 +81,7 @@ executables:
     source-dirs:         app
     ghc-options:
     - -threaded
+    - -Wall
     - -O2
     - -rtsopts
     - -with-rtsopts=-N
