@@ -134,6 +134,7 @@ data FeedError
     = FeedError
         { _errMessage  :: Text
         , _errOriginal :: Maybe Text
+        , _errUserId   :: Maybe UserId
         }
     deriving (Show, Typeable, Generic)
 instance Store FeedError
@@ -142,6 +143,7 @@ instance FromJSON FeedError where
     parseJSON = withObjectOfType "FeedError" "error" $ \o -> FeedError
         <$> o .: "message"
         <*> o .:? "original"
+        <*> o .:? "user_id"
 
 data Heartbeat
     = Heartbeat
@@ -149,6 +151,7 @@ data Heartbeat
         , _beatLastTradeId :: TradeId
         , _beatProductId   :: ProductId
         , _beatTime        :: UTCTime
+        , _beatUserId      :: Maybe UserId
         }
     deriving (Show, Typeable, Generic)
 instance Store Heartbeat
@@ -159,6 +162,7 @@ instance FromJSON Heartbeat where
         <*> o .: "last_trade_id"
         <*> o .: "product_id"
         <*> o .: "time"
+        <*> o .:? "user_id"
 
 data Ticker
     = Ticker
@@ -175,6 +179,7 @@ data Ticker
         , _tickerSide          :: Maybe Side
         , _tickerTime          :: Maybe UTCTime
         , _tickerLastSize      :: Maybe Double
+        , _tickerUserId        :: Maybe UserId
         }
     deriving (Show, Typeable, Generic)
 instance Store Ticker
@@ -194,12 +199,14 @@ instance FromJSON Ticker where
         <*> o .:? "side"
         <*> o .:? "time"
         <*> (o .:? "last_size" >>= maybeTextRead)
+        <*> o .:? "user_id"
 
 data Snapshot
     = Snapshot
         { _l2snapProductId :: ProductId
         , _l2snapBids      :: Vector Level2Item
         , _l2snapAsks      :: Vector Level2Item
+        , _l2snapUserId    :: Maybe UserId
         }
     deriving (Show, Typeable, Generic)
 instance Store Snapshot
@@ -209,6 +216,7 @@ instance FromJSON Snapshot where
         <$> o .: "product_id"
         <*> o .: "bids"
         <*> o .: "asks"
+        <*> o .:? "user_id"
 
 data Level2Item
     = Level2Item
@@ -242,6 +250,7 @@ data L2Update
     = L2Update
         { _l2updateProductId :: ProductId
         , _l2updateChanges   :: Vector Level2Change
+        , _l2updateUserId    :: Maybe UserId
         }
     deriving (Show, Typeable, Generic)
 instance Store L2Update
@@ -250,6 +259,7 @@ instance FromJSON L2Update where
     parseJSON = withObjectOfType "L2Update" "l2update" $ \o -> L2Update
         <$> o .: "product_id"
         <*> o .: "changes"
+        <*> o .:? "user_id"
 
 {--
 taker_user_id: "5844eceecf7e803e259d0365",
@@ -287,11 +297,11 @@ instance FromJSON Match where
         where
             process o = Match
                 <$> o .: "trade_id"
-                <*> o .:? "time"
                 <*> o .:? "user_id"
                 <*> o .:? "taker_user_id"
                 <*> o .:? "taker_profile_id"
                 <*> o .:? "profile_id"
+                <*> o .:? "time"
                 <*> o .: "maker_order_id"
                 <*> o .: "taker_order_id"
                 <*> o .: "product_id"
@@ -373,6 +383,7 @@ data Open
         , _openPrice         :: Double
         , _openRemainingSize :: Double
         , _openSide          :: Side
+        , _openUserId        :: Maybe UserId
         }
     deriving (Show, Typeable, Generic)
 instance Store Open
@@ -386,6 +397,7 @@ instance FromJSON Open where
         <*> (o .: "price" >>= textRead)
         <*> (o .: "remaining_size" >>= textRead)
         <*> o .: "side"
+        <*> o .:? "user_id"
 
 data Done
     = Done
@@ -397,6 +409,7 @@ data Done
         , _doneReason        :: Reason
         , _doneSide          :: Side
         , _doneRemainingSize :: Double
+        , _doneUserId        :: Maybe UserId
         }
     deriving (Show, Typeable, Generic)
 instance Store Done
@@ -411,6 +424,7 @@ instance FromJSON Done where
         <*> o .: "reason"
         <*> o .: "side"
         <*> (o .: "remaining_size" >>= textRead)
+        <*> o .:? "user_id"
 
 -- Match implemented previously
 
@@ -423,7 +437,8 @@ data Change
         , _changeNewSize   :: Double
         , _changeOldSize   :: Double
         , _changePrice     :: Double
-        , _changSide       :: Side
+        , _changeSide       :: Side
+        , _changeUserId    :: Maybe UserId
         }
     | ChangeFunds
         { _changeTime      :: UTCTime
@@ -433,7 +448,8 @@ data Change
         , _changeNewFunds  :: Double
         , _changeOldFunds  :: Double
         , _changePrice     :: Double
-        , _changSide       :: Side
+        , _changeSide       :: Side
+        , _changeUserId    :: Maybe UserId
         }
     deriving (Show, Typeable, Generic)
 instance Store Change
@@ -451,6 +467,8 @@ instance FromJSON Change where
                 <*> o .: "old_size"
                 <*> o .: "price"
                 <*> o .: "side"
+                <*> o .:? "user_id"
+
             Just _ -> ChangeFunds
                 <$> o .: "time"
                 <*> o .: "sequence"
@@ -460,6 +478,7 @@ instance FromJSON Change where
                 <*> o .: "old_funds"
                 <*> o .: "price"
                 <*> o .: "side"
+                <*> o .:? "user_id"
 
 data MarginProfileUpdate
     = MarginProfileUpdate
@@ -583,7 +602,7 @@ instance FromJSON GdaxMessage where
             _ -> fail $ T.unpack $ "Message of unsupported type '" <> t <> "'."
 
 -- Type to parse order book - order book is built from snapshots and updates - it doesn't have time which we will need to guess from trades for now. Need to add line time in UTC for order book capture
-data ObookState = OUpd L2Update | OInit Snapshot deriving (Show, Generic,Typeable)
+data ObookState = OUpd | OInit | OInvalid deriving (Show, Generic,Typeable)
 
 data Obook = Obook { _obook_timestamp :: UTCTime, _obook_ticker :: ProductId, _obook_seqnum :: Sequence, _obook_bids :: [(Double,Double)], _obook_asks :: [(Double,Double)] } deriving  (Show, Generic,Typeable)
 deriveJSON defaultOptions{fieldLabelModifier = Prelude.drop 7,constructorTagModifier = camelTo2 '_',omitNothingFields = True} ''Obook

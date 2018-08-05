@@ -3,7 +3,7 @@ module Feeds.Clients.Orderbook
 where
 
 --import Feeds.Gdax.Types.MarketData
-import Feeds.Gdax.Types.Feed (GdaxMessage(..),Obook(..),Snapshot(..),L2Update(..),Ticker(..),Level2Item(..),Level2Change(..))
+import Feeds.Gdax.Types.Feed (GdaxMessage(..),Obook(..),Snapshot(..),L2Update(..),Ticker(..),Level2Item(..),Level2Change(..),ObookState(..))
 import Feeds.Gdax.Types.Shared (ProductId,Sequence(..),Side(..))
 import Data.List (sortBy,foldl')
 import Data.Ord(Down(..),comparing)
@@ -119,6 +119,13 @@ updateHTbl ht sz inp =
             odata
 
     _         -> return Nothing
+
+-- Function to use for FSA on obook if needed. At the moment, doesn't seem any need for it
+nextObookState :: ObookState -> GdaxMessage -> ObookState
+nextObookState OInit (GdaxSnapshot _) =  OUpd
+nextObookState OInit _ = OInvalid -- If no snapshot during initialization, error out
+nextObookState OUpd _ = OUpd
+nextObookState OInvalid _ = OInvalid
 
 updObookH :: HashTable ProductId OData -> Int -> Stream (Of GdaxMessage) IO () -> Stream (Of Obook) IO ()
 updObookH ht sz = S.mapMaybeM (updateHTbl ht sz)

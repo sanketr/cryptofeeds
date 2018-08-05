@@ -10,21 +10,16 @@ module Feeds.Gdax.Types.Private where
 
 import           Data.Aeson
 import           Data.Aeson.TH 
-import           Data.HashMap.Strict       (HashMap)
-import           Data.Int
 import           Data.Monoid
 import           Data.Text                 (Text)
 import qualified Data.Text                 as T
 import           Data.Time
 import           Data.Typeable
 import           GHC.Generics
-import           Feeds.Common.Parsers
 import           Feeds.Gdax.Types.Shared
 import           Text.Read                 (readMaybe)
-import           Data.Char (isSpace,toLower)
+import           Data.Char (isSpace)
 import           Data.Store
-import           Data.ByteString           as BS (ByteString)
-
 
 data Account
     = Account
@@ -86,9 +81,9 @@ deriveJSON defaultOptions{fieldLabelModifier = camelTo2 '_' . Prelude.drop 6,omi
 data Hold
     = Hold
         { _holdId        :: HoldId
-        , _holdAccountId :: AccountId
+        , _holdAccountId :: Maybe AccountId
         , _holdCreatedAt :: UTCTime
-        , _holdUpdatedAt :: UTCTime
+        , _holdUpdatedAt :: Maybe UTCTime
         , _holdAmount    :: TextDouble
         , _holdReference :: HoldReference
         }
@@ -102,9 +97,9 @@ data HoldReference
 instance FromJSON Hold where
     parseJSON = withObject "Hold" $ \o -> Hold
         <$> o .: "id"
-        <*> o .: "account_id"
+        <*> o .:? "account_id"
         <*> o .: "created_at"
-        <*> o .: "updated_at"
+        <*> o .:? "updated_at"
         <*> o .: "amount"
         <*> parseRef o
         where
@@ -302,7 +297,7 @@ data Order
         , _orderSize                :: TextDouble
         , _orderProductId           :: ProductId
         , _orderSide                :: Side
-        , _orderStp                 :: SelfTradePolicy
+        , _orderStp                 :: Maybe SelfTradePolicy
         , _orderType                :: OrderType
         , _orderTimeInForce         :: TimeInForce
         , _orderPostOnly            :: Bool
@@ -312,6 +307,7 @@ data Order
         , _orderExecutedValue       :: TextDouble
         , _orderStatus              :: OrderStatus
         , _orderSettled             :: Bool
+        , _orderRejectReason        :: Maybe Text
         }
     deriving (Show, Typeable, Generic)
 deriveJSON defaultOptions{fieldLabelModifier = camelTo2 '_' . Prelude.drop 6,omitNothingFields = True} ''Order

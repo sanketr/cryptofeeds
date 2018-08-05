@@ -69,7 +69,7 @@ pubMdata bcast raddr pending = do
     -- add the client to broadcast of market data
     addListener bcast connid
     let loop = do
-            _ <- WS.receiveDataMessage conn -- ignore all incoming data
+            _ <- WS.receiveDataMessage conn -- ignore all incoming messages
             loop
     catch loop ((\_ -> delListener bcast connid) :: SomeException -> IO ())
     loop
@@ -85,7 +85,7 @@ runMdataPubServer msgChan htbl = do
     let bcastH msg =  broadcast (flip sendWsMsg) bcast (LBS.fromStrict . B.encode $ msg)
         bcastLoop = do
           msg <- takeMVar msgChan
-          obook <- fmap PubObook <$> updateHTbl htbl 5 msg -- Get updated Level 5 orderbook - Just only on changes, else Nothing
+          obook <- fmap PubObook <$> updateHTbl htbl 5 msg -- Get updated depth 5 orderbook - Just only on changes, else Nothing
           mapM_ bcastH $ catMaybes [getTrade msg,obook]
           bcastLoop
     bcastServer <- async bcastLoop

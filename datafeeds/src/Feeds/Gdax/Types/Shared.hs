@@ -234,7 +234,8 @@ data OrderStatus
     | OrderActive
     | OrderDone
     | OrderSettled
-    deriving (Typeable, Generic)
+    | OrderRejected
+    deriving (Eq, Ord,Typeable, Generic)
 instance Store OrderStatus
 instance Hashable OrderStatus
 
@@ -244,6 +245,7 @@ instance Show OrderStatus where
     show OrderActive  = "active"
     show OrderDone    = "done"
     show OrderSettled = "settled"
+    show OrderRejected = "rejected"
 
 instance ToJSON OrderStatus where
     toJSON = String . T.pack . show
@@ -256,6 +258,7 @@ instance FromJSON OrderStatus where
             "active"  -> pure OrderActive
             "done"    -> pure OrderDone
             "settled" -> pure OrderSettled
+            "rejected" -> pure OrderRejected
             _ -> fail $ T.unpack $ "'" <> s <> "' is not a valid order status."
 
 data Liquidity
