@@ -2,17 +2,14 @@ module Main where
 
 import Feeds.Clients.Ws as C (client)
 import Control.Concurrent.Async (async,waitCatch,waitEitherCatchCancel)
-import Control.Concurrent (threadDelay,forkIO,ThreadId,MVar,newEmptyMVar,putMVar,takeMVar)
+import Control.Concurrent (threadDelay,forkIO,MVar,newEmptyMVar)
 import System.IO
-import Data.Time.Clock.System (systemToUTCTime,getSystemTime)
 import Data.IORef
 import Feeds.Clients.Utils (compressLog,putLogStr)
 import Feeds.Common.Types (HdlInfo(..))
 import qualified Feeds.Gdax.Types.Feed as F (GdaxMessage)
 import Feeds.Clients.PubMarketData (runMdataPubServer)
-import Feeds.Clients.Orderbook (HashTable)
 import qualified Data.HashTable.IO as H (new)
-import Data.ByteString.Lazy as LBS (ByteString,empty)
 
 main :: IO ()
 main = do

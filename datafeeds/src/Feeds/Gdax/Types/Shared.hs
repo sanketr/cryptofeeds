@@ -7,7 +7,6 @@
 module Feeds.Gdax.Types.Shared where
 
 import           Data.Aeson
-import           Data.Aeson.TH
 import           Data.Hashable
 import           Data.Int
 import           Data.Monoid
@@ -15,7 +14,6 @@ import           Data.Scientific
 import           Data.String
 import           Data.Text       (Text)
 import qualified Data.Text       as T
-import qualified Data.Text.Encoding as T (decodeUtf8)
 import           Data.Typeable
 import           Data.UUID
 import           GHC.Generics

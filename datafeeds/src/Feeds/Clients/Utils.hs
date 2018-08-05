@@ -16,7 +16,7 @@ import Control.Exception.Safe (bracketOnError,bracket)
 import System.Directory (createDirectoryIfMissing,doesFileExist,removeFile)
 import System.FilePath (takeDirectory,(</>),(<.>))
 import System.IO (openBinaryFile,IOMode(..),hSetBuffering, BufferMode(..),hClose)
-import Control.Exception(Exception,throw)
+import Control.Exception(throw)
 import GHC.IO.Handle.Types (Handle(..))
 import Data.Time (formatTime,defaultTimeLocale,toModifiedJulianDay,utctDay)
 import Data.Time.Clock.System (systemToUTCTime,getSystemTime)
@@ -25,10 +25,9 @@ import Data.Char (toLower)
 import qualified Data.ByteString as BS (ByteString,hPut)
 import Feeds.Clients.Internal (compressLogZstd)
 import Feeds.Common.Types (HdlInfo(..),LogState(..),LogType(..),NoLogFileException(..))
-import Data.ByteArray.Encoding (convertToBase, convertFromBase, Base (Base64))
+import Data.ByteArray.Encoding (convertToBase, Base (Base64))
 import Crypto.Hash (HashAlgorithm, Digest)
 import Crypto.MAC.HMAC (hmac, hmacGetDigest)
-import Crypto.Hash.Algorithms(SHA256)
 --import Data.Time.Clock(addUTCTime,nominalDay) -- used for testing date rollover by faking date changes
 
 signMsg :: (HashAlgorithm a) => BS.ByteString -> BS.ByteString -> Digest a
@@ -45,34 +44,29 @@ putLogStr str = getTimeStamp >>= \x -> putStrLn (x ++ ": " ++ str)
 
 -- Simple utility to open a binary file - makes sure that parent directories are created if they don't exist
 openFile :: FilePath -> IOMode -> Bool -> IO Handle
-openFile fpath mode buffered = do
-  let dir = takeDirectory fpath
+openFile filepath mode buffered = do
+  let dir = takeDirectory filepath
   createDirectoryIfMissing True dir
-  h <- openBinaryFile fpath mode
+  h <- openBinaryFile filepath mode
   h `hSetBuffering` (if not buffered then NoBuffering else BlockBuffering Nothing)
   return h
 
-getPathFromHdl :: Handle -> Maybe FilePath
-getPathFromHdl hdl = case hdl of
-                      FileHandle fpath _ -> Just fpath
-                      _ -> Nothing
-
 compressLogH :: FilePath -> IO ()
-compressLogH fpath = do
-      fileExists <- doesFileExist fpath -- compress the log only if it exists
+compressLogH filepath = do
+      fileExists <- doesFileExist filepath -- compress the log only if it exists
       case fileExists of
         True -> do
-          let nfpath = fpath <.> ".zst" -- Add .zst extension to file path
+          let nfilepath = filepath <.> ".zst" -- Add .zst extension to file path
           -- Compress log here, and remove uncompressed log after compression
           bracket
-            (openFile fpath ReadMode True)
+            (openFile filepath ReadMode True)
             hClose $ \inphdl -> do
               bracket
-                (openFile nfpath WriteMode True)
+                (openFile nfilepath WriteMode True)
                 hClose $ \outhdl -> do
                       compressLogZstd 9 inphdl outhdl
-                      hClose inphdl >> removeFile fpath
-        False -> putLogStr ("Not compressing the log as file doesn't exist: " ++ fpath)
+                      hClose inphdl >> removeFile filepath
+        False -> putLogStr ("Not compressing the log as file doesn't exist: " ++ filepath)
 
 compressLog :: Maybe HdlInfo -> IO ()
 compressLog handle = maybe (return ()) compressLogH (fmap fpath handle)

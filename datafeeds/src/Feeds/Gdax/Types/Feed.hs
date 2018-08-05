@@ -23,7 +23,6 @@ import           Feeds.Common.Parsers
 import           Feeds.Gdax.Types.Shared
 import           Data.Store                (Store)
 import           Data.Maybe                (isJust,fromJust)
-import           Data.Int                  
 
 data Channel
     = ChannelHeartbeat
@@ -595,3 +594,6 @@ instance Store Obook
 instance Eq Obook where
   a == b = (_obook_ticker a == _obook_ticker b) && (_obook_bids a == _obook_bids b) &&(_obook_asks a == _obook_asks b)
 
+-- Sum type for all the messages that we will use for market data subscribers
+data PubMdataMsg = PubTicker Ticker | PubObook Obook deriving (Show,Generic,Typeable)
+instance Store PubMdataMsg 

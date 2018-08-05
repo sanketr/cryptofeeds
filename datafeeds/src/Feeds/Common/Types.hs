@@ -16,15 +16,11 @@ module Feeds.Common.Types
 
 where
 
-import Data.Aeson.TH
 import Data.Store
 import GHC.Generics
 import Data.Typeable
-import Data.Text as T (Text)
-import Data.Char (toLower)
-import Data.Int (Int64)
 import Data.ByteString as BS (ByteString)
-import Control.Exception(Exception,throw)
+import Control.Exception(Exception)
 import GHC.IO.Handle.Types (Handle(..))
 
 -- We use the data structure below to compress data, and use Store library to implement streaming

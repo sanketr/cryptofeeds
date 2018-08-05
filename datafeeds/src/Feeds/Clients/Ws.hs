@@ -7,7 +7,7 @@ where
 
 import Wuss -- Websocket secure client - small wrapper around websockets library
 
-import Control.Concurrent (MVar,newEmptyMVar,takeMVar,putMVar,modifyMVar_,forkFinally,threadDelay,killThread,ThreadId)
+import Control.Concurrent (MVar,newEmptyMVar,takeMVar,putMVar,forkFinally,threadDelay,killThread)
 import Data.IORef
 import Data.Text (pack)
 import Network.WebSockets (ClientApp, Connection, receiveData, sendClose, sendTextData)
@@ -21,8 +21,6 @@ import qualified Data.ByteString.Lazy as LBS (ByteString,toStrict)
 import qualified Streaming.Prelude as S (Of(..), Stream, yield, mapM_,separate)
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import System.Exit (exitSuccess)
-import GHC.IO.Handle.Types (Handle)
-import Data.List (foldl',delete)
 import qualified Feeds.Gdax.Types.Feed as F (Request(..),ReqTyp(..),ChannelSubscription(..),Channel(..),GdaxMessage)
 import qualified Data.Vector as V (fromList)
 import Feeds.Common.Types (LogType(..),HdlInfo)

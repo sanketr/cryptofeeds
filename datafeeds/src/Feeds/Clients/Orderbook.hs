@@ -2,23 +2,17 @@ module Feeds.Clients.Orderbook
 
 where
 
-import Data.ByteString.Lazy as BL hiding (foldl')
-import Data.Maybe (fromJust,isJust)
-import Data.Either (isRight,partitionEithers)
-import Data.Text as T (Text,empty,null,take)
 --import Feeds.Gdax.Types.MarketData
 import Feeds.Gdax.Types.Feed (GdaxMessage(..),Obook(..),Snapshot(..),L2Update(..),Ticker(..),Level2Item(..),Level2Change(..))
 import Feeds.Gdax.Types.Shared (ProductId,Sequence(..),Side(..))
-import Data.Aeson as A (decode)
-import Data.List (sortOn,sortBy,foldl')
+import Data.List (sortBy,foldl')
 import Data.Ord(Down(..),comparing)
 import qualified Data.HashTable.IO as H
 import qualified Data.Map.Strict as Map 
-import qualified Data.Vector as V (fromList,toList,map)
-import Criterion.Main
+import qualified Data.Vector as V (toList,map)
+-- import Criterion.Main
 import Streaming.Prelude as S (mapMaybeM)
 import Streaming as S (Stream,Of,lift)
-import Control.Monad.IO.Class (liftIO)
 import Data.Time (UTCTime(..),Day(..))
 import Data.Int (Int64)
 
