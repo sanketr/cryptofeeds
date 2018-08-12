@@ -224,7 +224,7 @@ listFills cfg oids pids = signedGdaxReq cfg (GdaxAuthReq GET "/fills" BS.empty) 
         params = fmap (\p -> ("product_id", Just . T.encodeUtf8 . unProductId $ p)) (Set.toList pids)
             <> fmap (\o -> ("order_id", Just . BSC.pack . show $ o)) (Set.toList oids)
 
-{-- Not implemented yet - doesn't seem to be documented in GDAX API doc
+{-- Not allowed anymore by GDAX - 403 forbidden status code
 getPosition :: ExchCfg -> IO (Either (Int,T.Text) Position)
 getPosition cfg = signedGdaxReq cfg (GdaxAuthReq GET "/position" BS.empty) []
 --}

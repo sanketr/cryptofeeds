@@ -31,7 +31,7 @@ import Feeds.Clients.Internal (toSum)
 client :: IORef (Maybe HdlInfo,Maybe HdlInfo) -> MVar F.GdaxMessage -> IO ()
 client hdlinfo msgChan = let
                     req = F.Request F.Subscribe  (V.fromList $ map (\(reqtyp,prdids) -> F.ChannelSubscription reqtyp (V.fromList prdids)) [(F.ChannelHeartbeat,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"]),(F.ChannelLevel2,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"]),(F.ChannelTicker,["LTC-USD","ETH-USD", "BTC-USD","ETH-BTC", "ETH-EUR"])]) Nothing
-                 in runSecureClient "ws-feed.gdax.com" 443 "/" (ws hdlinfo ("logs/gdax","1") msgChan req)
+                 in runSecureClient "ws-feed.pro.coinbase.com" 443 "/" (ws hdlinfo ("logs/gdax","1") msgChan req)
 
 -- Decode websocket json text - retain text if decoding failure else return decoded data
 msgDecode :: (A.FromJSON a, B.Store a) => LBS.ByteString -> Either LBS.ByteString a

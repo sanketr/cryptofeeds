@@ -151,7 +151,7 @@ instance ToJSON TradeId where
 data Side
     = Buy
     | Sell
-    deriving (Typeable, Generic)
+    deriving (Eq, Ord, Typeable, Generic)
 instance Store Side
 instance Hashable Side
 

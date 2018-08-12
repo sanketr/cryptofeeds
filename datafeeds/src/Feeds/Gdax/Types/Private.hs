@@ -16,19 +16,21 @@ import qualified Data.Text                 as T
 import           Data.Time
 import           Data.Typeable
 import           GHC.Generics
-import           Feeds.Gdax.Types.Shared
 import           Text.Read                 (readMaybe)
 import           Data.Char (isSpace)
 import           Data.Store
+import           Data.HashMap.Strict       (HashMap)
+import           Feeds.Gdax.Types.Shared
+import           Feeds.Common.Parsers
 
 data Account
     = Account
         { _accountId        :: AccountId
         , _accountProfileId :: ProfileId
         , _accountCurrency  :: CurrencyId
-        , _accountBalance   :: TextDouble
-        , _accountAvailable :: TextDouble
-        , _accountHold      :: TextDouble
+        , _accountBalance   :: Double
+        , _accountAvailable :: Double
+        , _accountHold      :: Double
         , _accountMargin    :: Maybe MarginAccount
         }
     deriving (Show, Typeable, Generic)
@@ -36,8 +38,8 @@ instance Store Account
 
 data MarginAccount
     = MarginAccount
-        { _maccountFundedAmount  :: TextDouble
-        , _maccountDefaultAmount :: TextDouble
+        { _maccountFundedAmount  :: Double
+        , _maccountDefaultAmount :: Double
         }
     deriving (Show, Typeable, Generic)
 instance Store MarginAccount
@@ -47,9 +49,9 @@ instance FromJSON Account where
         <$> o .: "id"
         <*> o .: "profile_id"
         <*> o .: "currency"
-        <*> o .: "balance" 
-        <*> o .: "available"
-        <*> o .: "hold"
+        <*> (o .: "balance"  >>= textRead) 
+        <*> (o .: "available"  >>= textRead)
+        <*> (o .: "hold"  >>= textRead)
         <*> do enabled <- o .:? "margin_enabled"
                if enabled == (Just True)
                 then (\a b -> Just $ MarginAccount a b)
@@ -71,12 +73,20 @@ data Entry
         { _entryId        :: EntryId
         , _entryType      :: EntryType
         , _entryCreatedAt :: UTCTime
-        , _entryAmount    :: TextDouble
-        , _entryBalance   :: TextDouble
+        , _entryAmount    :: Double
+        , _entryBalance   :: Double
         , _entryDetails   :: EntryDetails
         }
     deriving (Show, Typeable, Generic)
-deriveJSON defaultOptions{fieldLabelModifier = camelTo2 '_' . Prelude.drop 6,omitNothingFields = True} ''Entry
+
+instance FromJSON Entry where
+    parseJSON = withObject "Entry" $ \o -> Entry
+        <$> o .: "id"
+        <*> o .: "type"
+        <*> o .: "created_at"
+        <*> (o .: "amount" >>= textRead)
+        <*> (o .: "balance" >>= textRead)
+        <*> o .: "details"
 
 data Hold
     = Hold
@@ -84,7 +94,7 @@ data Hold
         , _holdAccountId :: Maybe AccountId
         , _holdCreatedAt :: UTCTime
         , _holdUpdatedAt :: Maybe UTCTime
-        , _holdAmount    :: TextDouble
+        , _holdAmount    :: Double
         , _holdReference :: HoldReference
         }
     deriving (Show, Typeable, Generic)
@@ -100,7 +110,7 @@ instance FromJSON Hold where
         <*> o .:? "account_id"
         <*> o .: "created_at"
         <*> o .:? "updated_at"
-        <*> o .: "amount"
+        <*> (o .: "amount"   >>= textRead)
         <*> parseRef o
         where
             parseRef o = do
@@ -128,8 +138,8 @@ data NewLimitOrder
         , _nloSide                :: Side
         , _nloProductId           :: ProductId
         , _nloSelfTradePrevention :: SelfTradePolicy
-        , _nloPrice               :: TextDouble
-        , _nloSize                :: TextDouble
+        , _nloPrice               :: Double
+        , _nloSize                :: Double
         , _nloTimeInForce         :: Maybe TimeInForce
         , _nloCancelAfter         :: Maybe CancelAfterPolicy
         , _nloPostOnly            :: Maybe Bool
@@ -179,7 +189,7 @@ data NewStopOrder
         , _nsoSide                :: Side
         , _nsoProductId           :: ProductId
         , _nsoSelfTradePrevention :: SelfTradePolicy
-        , _nsoPrice               :: TextDouble
+        , _nsoPrice               :: Double
         , _nsoMarketDesire        :: MarketDesire
         }
     deriving (Show, Typeable, Generic)
@@ -197,8 +207,8 @@ instance ToJSON NewStopOrder where
                 (DesireFunds f) -> [ "funds" .= f ]
 
 data MarketDesire
-    = DesireSize TextDouble -- ^ Desired amount in commodity (e.g. BTC)
-    | DesireFunds TextDouble -- ^ Desired amount in quote currency (e.g. USD)
+    = DesireSize Double -- ^ Desired amount in commodity (e.g. BTC)
+    | DesireFunds Double -- ^ Desired amount in quote currency (e.g. USD)
     deriving (Show, Typeable, Generic)
 
 data TimeInForce
@@ -293,8 +303,8 @@ instance FromJSON NewOrderConfirmation where
 data Order
     = Order
         { _orderId                  :: OrderId
-        , _orderPrice               :: TextDouble
-        , _orderSize                :: TextDouble
+        , _orderPrice               :: Double
+        , _orderSize                :: Double
         , _orderProductId           :: ProductId
         , _orderSide                :: Side
         , _orderStp                 :: Maybe SelfTradePolicy
@@ -302,29 +312,199 @@ data Order
         , _orderTimeInForce         :: TimeInForce
         , _orderPostOnly            :: Bool
         , _orderCreatedAt           :: UTCTime
-        , _orderFillFees            :: TextDouble
-        , _orderFilledSize          :: TextDouble
-        , _orderExecutedValue       :: TextDouble
+        , _orderFillFees            :: Double
+        , _orderFilledSize          :: Double
+        , _orderExecutedValue       :: Double
         , _orderStatus              :: OrderStatus
         , _orderSettled             :: Bool
         , _orderRejectReason        :: Maybe Text
         }
     deriving (Show, Typeable, Generic)
-deriveJSON defaultOptions{fieldLabelModifier = camelTo2 '_' . Prelude.drop 6,omitNothingFields = True} ''Order
 
+instance FromJSON Order where
+    parseJSON = withObject "Order" $ \o -> Order
+        <$> o .: "id"
+        <*> (o .: "price" >>= textRead)
+        <*> (o .: "size" >>= textRead)
+        <*> o .: "product_id"
+        <*> o .: "side"
+        <*> o .:? "stp"
+        <*> o .: "type"
+        <*> o .: "time_in_force"
+        <*> o .: "post_only"
+        <*> o .: "created_at"
+        <*> (o .: "fill_fees" >>= textRead)
+        <*> (o .: "filled_size" >>= textRead)
+        <*> (o .: "executed_value" >>= textRead)
+        <*> o .: "status"
+        <*> o .: "settled"
+        <*> o .:? "reject_reason"
 
 data Fill
     = Fill
         { _fillTradeId   :: TradeId
         , _fillProductId :: ProductId
-        , _fillPrice     :: TextDouble
-        , _fillSize      :: TextDouble
+        , _fillPrice     :: Double
+        , _fillSize      :: Double
         , _fillOrderId   :: OrderId
         , _fillCreatedAt :: UTCTime
         , _fillLiquidity :: Liquidity
-        , _fillFee       :: TextDouble
+        , _fillFee       :: Double
         , _fillSettled   :: Bool
         , _fillSide      :: Side
         }
     deriving (Show, Typeable, Generic)
-deriveJSON defaultOptions{fieldLabelModifier = camelTo2 '_' . Prelude.drop 5,omitNothingFields = True} ''Fill
+
+instance FromJSON Fill where
+    parseJSON = withObject "Fill" $ \o -> Fill
+        <$> o .: "trade_id"
+        <*> o .: "product_id"
+        <*> (o .: "price" >>= textRead)
+        <*> (o .: "size" >>= textRead)
+        <*> o .: "order_id"
+        <*> o .: "created_at"
+        <*> o .: "liquidity"
+        <*> (o .: "fee" >>= textRead)
+        <*> o .: "settled"
+        <*> o .: "side"
+
+data Position
+    = Position
+        { _posStatus       :: PositionStatus
+        , _posFunding      :: PositionFunding
+        , _posAccounts     :: HashMap Text PositionAccount -- ^ Text should be CurrencyId, but it will have to be fixed later.
+        , _posMarginCall   :: MarginCall
+        , _posUserId       :: UserId
+        , _posProfileId    :: ProfileId
+        , _posPositionInfo :: PositionInfo
+        , _posProductId    :: ProductId
+        }
+    deriving (Show, Typeable, Generic)
+
+instance FromJSON Position where
+    parseJSON = withObject "Position" $ \o -> Position
+        <$> o .: "status"
+        <*> o .: "funding"
+        <*> o .: "accounts"
+        <*> o .: "margin_call"
+        <*> o .: "user_id"
+        <*> o .: "profile_id"
+        <*> o .: "position"
+        <*> o .: "product_id"
+
+data PositionFunding
+    = PositionFunding
+        { _posfunMaxFundingValue   :: Double
+        , _posfunFundingValue      :: Double
+        , _posfunOldestOutstanding :: OutstandingFunding
+        }
+    deriving (Show, Typeable, Generic)
+
+instance FromJSON PositionFunding where
+    parseJSON = withObject "PositionFunding" $ \o -> PositionFunding
+        <$> o .: "max_funding_value"
+        <*> o .: "funding_value"
+        <*> o .: "oldest_outstanding"
+
+data OutstandingFunding
+    = OutstandingFunding
+        { _ofunId        :: FundingId
+        , _ofunOrderId   :: OrderId
+        , _ofunCreatedAt :: UTCTime
+        , _ofunCurrency  :: CurrencyId
+        , _ofunAccountId :: AccountId
+        , _ofunAmount    :: Double
+        }
+    deriving (Show, Typeable, Generic)
+
+instance FromJSON OutstandingFunding where
+    parseJSON = withObject "OutstandingFunding" $ \o -> OutstandingFunding
+        <$> o .: "id"
+        <*> o .: "order_id"
+        <*> o .: "created_at"
+        <*> o .: "currency"
+        <*> o .: "account_id"
+        <*> o .: "amount"
+
+data PositionAccount
+    = PositionAccount
+        { _paccountId            :: AccountId
+        , _paccountBalance       :: Double
+        , _paccountHold          :: Double
+        , _paccountFundedAmount  :: Double
+        , _paccountDefaultAmount :: Double
+        }
+    deriving (Show, Typeable, Generic)
+
+instance FromJSON PositionAccount where
+    parseJSON = withObject "PositionAccount" $ \o -> PositionAccount
+        <$> o .: "id"
+        <*> o .: "balance"
+        <*> o .: "hold"
+        <*> o .: "funded_amount"
+        <*> o .: "default_amount"
+
+data MarginCall
+    = MarginCall
+        { _mcallActive :: Bool
+        , _mcallPrice  :: Double
+        , _mcallSide   :: Side
+        , _mcallSize   :: Double
+        , _mcallFunds  :: Double
+        }
+    deriving (Show, Typeable, Generic)
+
+instance FromJSON MarginCall where
+    parseJSON = withObject "MarginCall" $ \o -> MarginCall
+        <$> o .: "active"
+        <*> o .: "price"
+        <*> o .: "side"
+        <*> o .: "size"
+        <*> o .: "funds"
+
+data PositionInfo
+    = PositionInfo
+        { _pinfoType       :: PositionType
+        , _pinfoSize       :: Double
+        , _pinfoComplement :: Double
+        , _pinfoMaxSize    :: Double
+        }
+    deriving (Show, Typeable, Generic)
+
+instance FromJSON PositionInfo where
+    parseJSON = withObject "PositionInfo" $ \o -> PositionInfo
+        <$> o .: "type"
+        <*> o .: "size"
+        <*> o .: "complement"
+        <*> o .: "max_size"
+
+data Deposit
+    = Deposit
+        { _depositAmount        :: Double
+        , _depositCurrency      :: CurrencyId
+        , _depositPaymentMethod :: PaymentMethodId
+        }
+    deriving (Show, Typeable, Generic)
+
+instance ToJSON Deposit where
+    toJSON Deposit{..} = object
+        [ "amount" .= _depositAmount
+        , "currency" .= _depositCurrency
+        , "payment_method_id" .= _depositPaymentMethod
+        ]
+
+data DepositReceipt
+    = DepositReceipt
+        { _dreceiptId       :: DepositId
+        , _dreceiptAmount   :: Double
+        , _dreceiptCurrency :: CurrencyId
+        , _dreceiptPayoutAt :: UTCTime
+        }
+    deriving (Show, Typeable, Generic)
+
+instance FromJSON DepositReceipt where
+    parseJSON = withObject "DepositReceipt" $ \o -> DepositReceipt
+        <$> o .: "id"
+        <*> (o .: "amount" >>= textRead)
+        <*> o .: "currency"
+        <*> o .: "payout_at"
