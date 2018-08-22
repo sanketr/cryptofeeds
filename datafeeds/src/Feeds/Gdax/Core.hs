@@ -144,31 +144,6 @@ decodeResult res = let rbody = getResponseBody res in
         Just val -> return . Right $ val
 {-# INLINE decodeResult #-}
 
-{--
-test :: FilePath -> IO ()
-test fpath = do
-    gdaxCfg <- loadCfg fpath Sandbox -- load sandbox configuration
-    case gdaxCfg of 
-      Right cfg -> do
-        --request <- genRestAuthMsg cfg (GdaxAuthReq GET orderReqPath BS.empty)
-        -- | This is how to build the json body for new limit order
-        let limitOrder = NewLimitOrder Nothing Buy "LTC-USD" DecreaseOrCancel "83.09" "0.015" Nothing Nothing (Just True)
-            limitOrderJson = LBS.toStrict . A.encode $ limitOrder
-        limitReq <- genRestAuthMsg cfg (GdaxAuthReq POST orderReqPath limitOrderJson) []
-        -- request <- genRestAuthMsg cfg (GdaxAuthReq GET accountReqPath BS.empty) -- this one gets the account information
-        -- TODO: use withResponse for request processing (exception safe)
-        response <- httpLBS limitReq
-        case getResponseStatusCode response of
-          200 -> do
-            {--
-            let rspBody = A.decode (getResponseBody response) :: Maybe [Account]
-            print rspBody
-            --}
-            print (getResponseBody response)
-          u -> print response >> (print $ "Message was rejected with status code " ++ show u)
-      Left e -> print e
---}
-
 -- Return signature is: Either (HTTP Status Code, Message) Data
 signedGdaxReq ::  A.FromJSON a => ExchCfg -> GdaxAuthReq -> [(BS.ByteString, Maybe BS.ByteString)] -> IO (Either (Int,T.Text) a)
 signedGdaxReq cfg req params = do
