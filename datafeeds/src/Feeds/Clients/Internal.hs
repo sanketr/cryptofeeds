@@ -15,7 +15,7 @@ import qualified Streaming.Prelude as S hiding (print,show)
 import Data.IORef
 import Control.Exception.Safe (bracket)
 import Feeds.Common.Types (CompressedBlob(..))
-import Feeds.Gdax.Types.MarketData (GdaxRsp)
+import Feeds.Gdax.Types.MarketData (GdaxRsp(..),Ticker(..))
 import System.IO (stdin,stdout,Handle)
 import qualified Data.Aeson as A (decode,encode)
 import qualified Feeds.Gdax.Types.Feed as F (GdaxMessage(..))
@@ -129,8 +129,11 @@ decodeGdaxLogV1 :: IO ()
 decodeGdaxLogV1 = bracket
                   (BB.new Nothing)
                   BB.free
-                  (SBS.toHandle stdout . SBS.fromChunks  . S.map (LBS.toStrict . LBS.append "\n" . getBytes ) . S.filter isTrade . S.map fromJust . S.filter isJust . S.map ((A.decode:: LBS.ByteString -> Maybe F.GdaxMessage) . A.encode) . decodeGdaxLogHv1)
+                  (SBS.toHandle stdout . SBS.fromChunks  . S.map (LBS.toStrict . LBS.append "\n" . getBytes ) . S.filter isTrade . S.map fromJust . S.filter isJust . S.map ((A.decode:: LBS.ByteString -> Maybe F.GdaxMessage) . A.encode) . S.filter isTradev1 . decodeGdaxLogHv1)
              where
+              isTradev1 msg = case msg of
+                GdRTick _ -> True
+                _ -> False
               isTrade msg = case msg of
                 F.GdaxTicker _ -> True
                 _              -> False
