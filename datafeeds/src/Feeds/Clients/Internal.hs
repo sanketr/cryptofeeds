@@ -5,7 +5,9 @@ where
 import qualified Data.ByteString.Streaming as SBS (fromHandle,toHandle,fromChunks,toChunks)
 import qualified Data.ByteString.Internal as BS (ByteString(..))
 import qualified Data.ByteString as BS (empty)
-import qualified Data.ByteString.Lazy as LBS (ByteString,toStrict,fromStrict,append)
+import qualified Data.ByteString.Lazy as LBS (ByteString,toStrict,fromStrict,append,empty)
+import qualified Data.ByteString.Lazy.Char8 as LBSC (pack)
+import Data.Maybe (isJust,fromJust)
 import Streaming as S
 import System.IO.ByteBuffer as BB (new,free,ByteBuffer) 
 import Data.Store (Store)
@@ -16,7 +18,7 @@ import Feeds.Common.Types (CompressedBlob(..))
 import Feeds.Gdax.Types.MarketData (GdaxRsp)
 import System.IO (stdin,stdout,Handle)
 import qualified Data.Aeson as A (decode,encode)
-import qualified Feeds.Gdax.Types.Feed as F (GdaxMessage)
+import qualified Feeds.Gdax.Types.Feed as F (GdaxMessage(..))
 import Data.Store.Streaming as B
 import Codec.Compression.Zlib as Zl (compress,decompress)
 import qualified Codec.Compression.Zstd.Streaming as Z
@@ -96,6 +98,9 @@ streamDecodeCompressed (bb1,bb2) = streamDecode bb1 . S.map decompressMessage . 
 decodeGdaxLogHv1 :: ByteBuffer -> Stream (Of GdaxRsp) IO ()
 decodeGdaxLogHv1 bb = streamDecode bb . SBS.toChunks . SBS.fromHandle $ stdin
 
+decodeGdaxLogH :: ByteBuffer -> Stream (Of F.GdaxMessage) IO ()
+decodeGdaxLogH bb = streamDecode bb . SBS.toChunks . SBS.fromHandle $ stdin
+
 -- TODO: Add a state machine for order book and trades
 -- State machine: 
 -- Initialization: snapshot must exist before l2update when starting. Else error out, and ask for snapshot log - hint it is normally a log that starts with 1
@@ -104,18 +109,36 @@ decodeGdaxLogHv1 bb = streamDecode bb . SBS.toChunks . SBS.fromHandle $ stdin
 -- 3. Seq num lets us keep track of order book evolution given same time
 -- 4. Reset seq num on date roll over
 
+-- Get trades from the log for now. Don't need other data
 decodeGdaxLog :: IO ()
 decodeGdaxLog = bracket
                   (BB.new Nothing)
                   BB.free
                   -- Convert to JSON format, add new line and redirect output to stdout
-                  (SBS.toHandle stdout . SBS.fromChunks  . S.map (LBS.toStrict . LBS.append "\n" . A.encode) . decodeGdaxLogHv1)
+                  (SBS.toHandle stdout . SBS.fromChunks  . S.map (LBS.toStrict . LBS.append "\n" . getBytes ) . S.filter isTrade . decodeGdaxLogH)
+            where
+              isTrade msg = case msg of
+                F.GdaxTicker _ -> True
+                _              -> False
 
-migrateGdaxLog :: IO ()
-migrateGdaxLog = bracket
+              getBytes msg = case msg of
+                F.GdaxTicker tr -> LBSC.pack . show $ tr
+                _               -> LBS.empty
+
+decodeGdaxLogV1 :: IO ()
+decodeGdaxLogV1 = bracket
                   (BB.new Nothing)
                   BB.free
-                  (SBS.toHandle stdout . SBS.fromChunks  . S.map (B.encodeMessage . B.Message . (A.decode:: LBS.ByteString -> Maybe F.GdaxMessage) . A.encode) . decodeGdaxLogHv1)
+                  (SBS.toHandle stdout . SBS.fromChunks  . S.map (LBS.toStrict . LBS.append "\n" . getBytes ) . S.filter isTrade . S.map fromJust . S.filter isJust . S.map ((A.decode:: LBS.ByteString -> Maybe F.GdaxMessage) . A.encode) . decodeGdaxLogHv1)
+             where
+              isTrade msg = case msg of
+                F.GdaxTicker _ -> True
+                _              -> False
+
+              getBytes msg = case msg of
+                F.GdaxTicker tr -> LBSC.pack . show $ tr
+                _               -> LBS.empty
+
 
 decodeGdaxCompressedLog :: IO ()
 decodeGdaxCompressedLog = bracket

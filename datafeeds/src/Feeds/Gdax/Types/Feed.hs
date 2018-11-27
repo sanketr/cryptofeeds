@@ -10,6 +10,7 @@ module Feeds.Gdax.Types.Feed where
 import           Data.Aeson
 import           Data.Aeson.TH
 import           Data.Monoid
+import           Data.List                 (intercalate)
 import           Data.Text                 (Text)
 import qualified Data.Text                 as T
 import qualified Data.Text.Encoding        as T (decodeUtf8,encodeUtf8)
@@ -181,8 +182,18 @@ data Ticker
         , _tickerLastSize      :: Maybe Double
         , _tickerUserId        :: Maybe UserId
         }
-    deriving (Show, Typeable, Generic)
+    deriving (Typeable, Generic)
 instance Store Ticker
+
+justShow :: (Show a) => Maybe a -> String
+justShow (Just t) = show t
+justShow Nothing = ""
+
+instance Show Ticker where
+  show Ticker{..} = intercalate "," [show _tickerProductId,show _tickerPrice,justShow _tickerLastSize,justShow _tickerSide, justShow _tickerTime, show _tickerBestBid, show _tickerBestAsk]
+
+instance ToJSON Ticker where
+  toJSON Ticker{..} = object ["sym" .= _tickerProductId, "price" .= _tickerPrice, "size" .=  _tickerLastSize, "side" .= _tickerSide, "time" .= _tickerTime, "bestbid" .= _tickerBestBid, "bestask" .= _tickerBestAsk ]
 
 instance FromJSON Ticker where
     parseJSON = withObjectOfType "Ticker" "ticker" $ \o -> Ticker
